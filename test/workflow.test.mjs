@@ -21,14 +21,14 @@ test('real SDK against mock transport: handoffs, terminal failure, review gate a
  let cookie,w;
  async function request(path,method='GET',data){const r=await fetch(base+'/api/'+path,{method,headers:{Origin:base,'Content-Type':'application/json',Cookie:cookie||'','x-workspace-id':w||''},...(data?{body:JSON.stringify(data)}:{})});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];return {status:r.status,data:await r.json()};}
  await request('register','POST',{email:'workflow@example.com',password:'workflow-password-123',name:'Tester',workspace:'Workflow QA'});w=(await request('me')).data.workspaces[0].id;
- let s=(await request('state')).data;const t=(await request('tasks','POST',{title:'Report',description:'Test handoff',agentId:s.agents[0].id,roomId:s.rooms[0].id,workflow:'team'})).data;
+ let s=(await request('state')).data;const t=(await request('tasks','POST',{title:'Report',description:'Test handoff',agentId:s.agents[0].id,roomId:s.rooms[0].id,workflow:'team',agentIds:[s.agents[0].id,s.agents[1].id]})).data;
  assert.equal((await request('tasks/'+t.id+'/run','POST',{})).status,202);
  for(let i=0;i<100;i++){s=(await request('state')).data;if(s.tasks[0].status!=='running')break;await new Promise(ok=>setTimeout(ok,20));}
- assert.equal(s.tasks[0].status,'review',s.tasks[0].error);assert.equal(calls,3);assert.deepEqual(s.outputs.map(o=>o.stage),['plan','draft','review']);assert.equal(s.tasks[0].sessions.length,3);assert.equal(s.usage,3);
+ assert.equal(s.tasks[0].status,'review',s.tasks[0].error);assert.equal(calls,4);assert.deepEqual(s.outputs.map(o=>o.stage),['plan','draft','specialist-2','review']);assert.equal(s.tasks[0].sessions.length,4);assert.equal(s.usage,4);
  assert.equal((await request('tasks/'+t.id+'/approve','POST',{})).status,200);assert.equal((await request('tasks/'+t.id+'/run','POST',{})).status,409);
  failNext=true;const t2=(await request('tasks','POST',{title:'Failure test',description:'Simulate failure',agentId:s.agents[0].id,roomId:s.rooms[0].id})).data;
  await request('tasks/'+t2.id+'/run','POST',{});
  for(let i=0;i<100;i++){s=(await request('state')).data;if(s.tasks.find(t=>t.id===t2.id).status!=='running')break;await new Promise(ok=>setTimeout(ok,20));}
- assert.equal(s.tasks.find(t=>t.id===t2.id).status,'failed');assert.equal(s.outputs.length,3);assert.equal(calls,4,'failed turns must not auto-retry');
+ assert.equal(s.tasks.find(t=>t.id===t2.id).status,'failed');assert.equal(s.outputs.length,4);assert.equal(calls,5,'failed turns must not auto-retry');
  }finally{child?.kill();await new Promise(ok=>upstream.close(ok));setTimeout(()=>rmSync(dir,{recursive:true,force:true}),100);}
 });

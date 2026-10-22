@@ -1,6 +1,6 @@
 {
   "name": "rainy-ai-office",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,10 +9,11 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env.local server.mjs",
     "test": "node --test",
-    "check": "node --check server.mjs && node --check public/app.js",
+    "check": "node --check server.mjs && node --check public/app.js && node --check public/office3d.js",
     "dev": "node --env-file-if-exists=.env.local server.mjs"
   },
   "dependencies": {
-    "openai": "7.42.0"
+    "openai": "7.42.0",
+    "three": "0.180.0"
   }
 }

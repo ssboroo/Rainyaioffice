@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env.local server.mjs",
     "test": "node --test",
-    "check": "node --check server.mjs && node --check public/app.js && node --check public/office3d.js",
+    "check": "node --check server.mjs && node --check public/app.js && node --check public/office3d.js && node --check runtime.mjs",
     "dev": "node --env-file-if-exists=.env.local server.mjs",
     "build": "node scripts/build.mjs",
     "test:build": "node scripts/smoke-build.mjs"

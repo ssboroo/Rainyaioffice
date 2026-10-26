@@ -16,11 +16,12 @@ try {
  const result=await build({entryPoints:[resolve(root,'public/app.js')],outfile:resolve(stage,'public/app.js'),bundle:true,format:'esm',platform:'browser',target:['es2022'],minify:true,legalComments:'eof',metafile:true,plugins:[{name:'local-browser-imports',setup(b){b.onResolve({filter:/^\/(office3d\.js|vendor\/)/},args=>({path:localImports[args.path]}));}}]});
  for(const f of ['index.html','style.css','office3d.js'])await cp(resolve(root,'public',f),resolve(stage,'public',f));
  await cp(resolve(root,'server.mjs'),resolve(stage,'server.mjs'));
+ await cp(resolve(root,'runtime.mjs'),resolve(stage,'runtime.mjs'));
  await cp(resolve(root,'package-lock.json'),resolve(stage,'package-lock.json'));
  const pkg=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));
  // Keep the lockfile-compatible manifest; production install omits build dependencies.
  await writeFile(resolve(stage,'package.json'),JSON.stringify(pkg,null,2)+'\n');
- const files=['server.mjs','public/index.html','public/style.css','public/app.js','public/office3d.js','package.json','package-lock.json'];
+ const files=['server.mjs','runtime.mjs','public/index.html','public/style.css','public/app.js','public/office3d.js','package.json','package-lock.json'];
  const manifest={name:pkg.name,version:pkg.version,files:{},bundledModules:Object.keys(result.metafile.inputs).length};
  for(const f of files){const bytes=await readFile(resolve(stage,f));manifest.files[f]={bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};}
  await writeFile(resolve(stage,'build-manifest.json'),JSON.stringify(manifest,null,2)+'\n');

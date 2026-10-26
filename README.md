@@ -104,3 +104,11 @@ The current deliverable is **v0.2 functional core**, not a claim that all five p
 - Current audit rows are append-only through the application API, but are not tamper-evident against database administrators. Choose compliance controls according to the organization's requirements.
 
 Approving a draft only changes its status inside this application. It does not send emails, execute payments, publish content or make legal/financial decisions.
+
+## Railway deployment
+
+Project: RAINY AI OFFICE. Service: rainy-ai-office.
+
+The Docker entrypoint is `node runtime.mjs`. Railway volume startup uses `RAILWAY_RUN_UID=0` only for initialization; the entrypoint creates `/data/office`, makes it private to UID 1000, clears supplementary groups, then permanently drops to UID/GID 1000 before loading the HTTP server. `DB_PATH=/data/office/office.sqlite`. The running application never needs root privileges. Use one replica with this SQLite volume.
+
+Health check: `/healthz`. Public origin is configured explicitly and Secure cookies remain enabled. The existing OpenAI API credential must be configured in this service's protected variables before live AI runs; no credential is embedded in source or the build.

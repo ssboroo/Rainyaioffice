@@ -17,6 +17,7 @@ COPY --from=build /app/dist/server.mjs /app/dist/runtime.mjs ./
 COPY --from=build /app/dist/public ./public
 COPY --from=build /app/dist/lib ./lib
 COPY --from=build /app/dist/assets ./assets
+COPY --from=build /app/dist/scripts ./scripts
 COPY --from=build /app/dist/build-manifest.json ./
 RUN mkdir /data && chown node:node /data
 USER node

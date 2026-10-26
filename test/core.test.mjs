@@ -1,36 +1,623 @@
-import {test,before,after} from 'node:test';
-import {totp} from '../lib/mfa.mjs';
-import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
-import {mkdtempSync,rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-const dir=mkdtempSync(join(tmpdir(),'rainy-test-'));
-let child,base,cookieA,cookieB,wA,wB,agent,room,task,viewerCookie;
-async function req(path,method='GET',data,cookie=cookieA,w=wA){const r=await fetch(base+'/api/'+path,{method,headers:{Origin:base,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{}),'x-workspace-id':w||''},...(data?{body:JSON.stringify(data)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
-before(async()=>{child=spawn(process.execPath,['server.mjs'],{env:{...process.env,PORT:'0',DB_PATH:join(dir,'test.sqlite'),OPENAI_API_KEY:'',NODE_ENV:'test',APP_ORIGIN:'',WORKSPACE_SECRET_KEY:Buffer.alloc(32,3).toString('base64')},stdio:['ignore','pipe','pipe']});await new Promise((ok,no)=>{const timer=setTimeout(()=>no(Error('startup timeout')),10000);child.stdout.on('data',b=>{const m=String(b).match(/listening on (\d+)/);if(m){base='http://127.0.0.1:'+m[1];clearTimeout(timer);ok();}});child.on('exit',c=>no(Error('server exited '+c)));});});
-after(()=>{child?.kill();setTimeout(()=>rmSync(dir,{recursive:true,force:true}),100);});
-test('unauthenticated access denied',async()=>assert.equal((await req('me')).status,401));
-test('create isolated workspaces and authenticated sessions',async()=>{for(const [i,email]of ['alpha@example.com','beta@example.com'].entries()){const r=await req('register','POST',{email,password:'long-password-123',name:'User '+i,workspace:'Org '+i},null,'');assert.equal(r.status,201);const m=await req('me','GET',null,r.cookie,'');if(i===0){cookieA=r.cookie;wA=m.data.workspaces[0].id;}else{cookieB=r.cookie;wB=m.data.workspaces[0].id;}}const s=await req('state');assert.equal(s.status,200);agent=s.data.agents[0].id;room=s.data.rooms[0].id;assert.equal(s.data.agents.length,4);});
-test('cross-tenant workspace read denied',async()=>assert.equal((await req('state','GET',null,cookieB,wA)).status,403));
-test('cross-tenant agent cannot be assigned',async()=>{const r=await req('tasks','POST',{title:'Leak',description:'test',roomId:room,agentId:agent},cookieB,wB);assert.equal(r.status,400);});
-test('invalid JSON returns 400',async()=>{const r=await fetch(base+'/api/tasks',{method:'POST',headers:{Origin:base,'Content-Type':'application/json',Cookie:cookieA,'x-workspace-id':wA},body:'{'});assert.equal(r.status,400);});
-test('origin protection rejects forged mutation',async()=>{const r=await fetch(base+'/api/rooms',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json',Cookie:cookieA,'x-workspace-id':wA},body:JSON.stringify({name:'evil'})});assert.equal(r.status,403);});
-test('documents persist and task references valid tenant documents',async()=>{const d=await req('documents','POST',{title:'Policy',content:'Internal data'});assert.equal(d.status,201);const r=await req('tasks','POST',{title:'Monthly report',description:'Prepare a report',roomId:room,agentId:agent,workflow:'team',documentIds:[d.data.id]});assert.equal(r.status,201);task=r.data.id;const s=await req('state');assert.equal(s.data.tasks.length,1);assert.equal(s.data.documents.length,1);const other=await req('state','GET',null,cookieB,wB);assert.equal(other.data.tasks.length,0);assert.equal(other.data.documents.length,0);});
-test('missing API key returns honest 503 without fake output',async()=>{const r=await req('tasks/'+task+'/run','POST',{});assert.equal(r.status,503);const s=await req('state');assert.equal(s.data.outputs.length,0);assert.equal(s.data.tasks[0].status,'queued');});
-test('approval cannot skip AI completion/review',async()=>assert.equal((await req('tasks/'+task+'/approve','POST',{})).status,409));
-test('invites are single-use and viewer is read-only',async()=>{const invite=await req('invites','POST',{role:'viewer',email:'beta@example.com'});assert.equal(invite.status,200);assert.equal((await req('join','POST',{token:invite.data.token},cookieB,'')).status,200);viewerCookie=cookieB;assert.equal((await req('join','POST',{token:invite.data.token},cookieB,'')).status,400);assert.equal((await req('state','GET',null,viewerCookie,wA)).status,200);assert.equal((await req('rooms','POST',{name:'forbidden'},viewerCookie,wA)).status,403);assert.equal((await req('agents','POST',{name:'bad'},viewerCookie,wA)).status,403);assert.equal((await req('invites','POST',{role:'admin'},viewerCookie,wA)).status,403);});
-test('login rejects invalid passwords and cookie is HttpOnly',async()=>{assert.equal((await req('login','POST',{email:'alpha@example.com',password:'wrong'})).status,401);const r=await fetch(base+'/api/login',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({email:'alpha@example.com',password:'long-password-123'})});assert.equal(r.status,200);assert.match(r.headers.get('set-cookie'),/HttpOnly/);assert.match(r.headers.get('set-cookie'),/SameSite=Strict/);});
-test('same user can create a second isolated workspace',async()=>{const r=await req('workspaces','POST',{name:'Second organization'});assert.equal(r.status,201);const m=await req('me');assert.equal(m.data.workspaces.length,2);const second=await req('state','GET',null,cookieA,r.data.id);assert.equal(second.data.documents.length,0);assert.equal(second.data.tasks.length,0);assert.equal((await req('state','GET',null,cookieB,r.data.id)).status,403);});
-test('invites bind to recipient email and can be revoked',async()=>{const i=await req('invites','POST',{role:'member',email:'somebody@example.com'});assert.equal(i.status,200);assert.equal((await req('join','POST',{token:i.data.token},cookieB,'')).status,400);const inv=(await req('state')).data.invites.find(x=>x.email==='somebody@example.com');assert.ok(inv);assert.equal((await req('invites/'+inv.id,'DELETE',{})).status,200);assert.equal((await req('state')).data.invites.some(x=>x.id===inv.id),false);});
-test('owner is protected and viewer cannot promote itself',async()=>{const s=(await req('state')).data,owner=s.members.find(m=>m.role==='owner'),v=s.members.find(m=>m.role==='viewer');assert.equal((await req('members/'+owner.id,'DELETE',{})).status,403);assert.equal((await req('members/'+v.id,'PATCH',{role:'admin'},cookieB,wA)).status,403);});
-test('membership role changes and removal enforce immediately',async()=>{const s=(await req('state')).data,v=s.members.find(m=>m.role==='viewer');assert.equal((await req('members/'+v.id,'PATCH',{role:'member'})).status,200);assert.equal((await req('rooms','POST',{name:'Member permitted'},cookieB,wA)).status,201);assert.equal((await req('members/'+v.id,'DELETE',{})).status,200);assert.equal((await req('state','GET',null,cookieB,wA)).status,403);});
-test('cross-workspace task mutations and agent IDs are rejected',async()=>{assert.equal((await req('tasks/'+task+'/approve','POST',{},cookieB,wB)).status,404);const s=(await req('state','GET',null,cookieB,wB)).data;assert.equal((await req('tasks','POST',{title:'Unauthorized specialist',description:'bad',roomId:s.rooms[0].id,agentId:s.agents[0].id,agentIds:[s.agents[0].id,agent]},cookieB,wB)).status,400);});
-test('3D modules served locally, traversal rejected',async()=>{for(const path of ['/office3d.js','/vendor/three.module.js','/vendor/three.core.js','/vendor/OrbitControls.js']){const r=await fetch(base+path);assert.equal(r.status,200);assert.match(r.headers.get('content-type'),/javascript/);}assert.equal((await fetch(base+'/vendor/package.json')).status,404);const controls=await(await fetch(base+'/vendor/OrbitControls.js')).text();assert.ok(controls.includes("from '/vendor/three.module.js'"));});
-test('revoke all sessions invalidates every login for a user',async()=>{const r=await req('login','POST',{email:'beta@example.com',password:'long-password-123'});assert.equal(r.status,200);assert.equal((await req('sessions/revoke','POST',{},r.cookie,wB)).status,200);assert.equal((await req('me','GET',null,cookieB,wB)).status,401);assert.equal((await req('me','GET',null,r.cookie,wB)).status,401);});
-test('room environment persists and respects tenant boundaries',async()=>{const r=await req('rooms','POST',{name:'Engineering',type:'development'});assert.equal(r.status,201);assert.equal(r.data.type,'development');assert.equal((await req('rooms/'+r.data.id,'PATCH',{type:'education'})).status,200);assert.equal((await req('state')).data.rooms.find(x=>x.id===r.data.id).type,'education');assert.equal((await req('rooms/'+r.data.id,'PATCH',{type:'anything'})).status,400);});
-test('import, revision and workflow templates are workspace scoped',async()=>{const r=await req('documents/import','POST',{name:'policy.txt',data:Buffer.from('Байгууллагын шинэ журам').toString('base64')});assert.equal(r.status,201);assert.match(r.data.content,/журам/);const edited=await req('documents/'+r.data.id,'PATCH',{title:'Policy v2',content:'Шинэ хувилбар'});assert.equal(edited.status,200);assert.equal(edited.data.version,2);assert.equal((await req('state')).data.documentVersions.some(v=>v.documentId===r.data.id),true);const workflow=await req('workflows','POST',{name:'Monthly report',description:'Prepare summary',agentIds:[agent]});assert.equal(workflow.status,201);assert.equal((await req('state')).data.workflows.length,1);assert.equal((await req('documents/'+r.data.id,'PATCH',{title:'bad',content:'bad'},'invalid-cookie',wA)).status,401);});
-test('private rooms protect documents, tasks and direct mutations from another member',async()=>{const account=await req('register','POST',{email:'restricted@example.com',password:'restricted-user-123',name:'Restricted',workspace:'Other Org'},null,'');const ck=account.cookie;const invite=await req('invites','POST',{email:'restricted@example.com',role:'member'});assert.equal((await req('join','POST',{token:invite.data.token},ck,'')).status,200);const r=await req('rooms','POST',{name:'Confidential HR',type:'hr'});assert.equal((await req('rooms/'+r.data.id,'PATCH',{type:'hr',private:true,allowedUserIds:[]})).status,200);const d=await req('documents','POST',{title:'Private salary',content:'Sensitive test data',roomId:r.data.id});assert.equal(d.status,201);const t=await req('tasks','POST',{title:'HR task',description:'Private task',roomId:r.data.id,agentId:agent,documentIds:[d.data.id]});assert.equal(t.status,201);const state=(await req('state','GET',null,ck,wA)).data;assert.equal(state.rooms.some(x=>x.id===r.data.id),false);assert.equal(state.documents.some(x=>x.id===d.data.id),false);assert.equal(state.tasks.some(x=>x.id===t.data.id),false);assert.equal((await req('tasks/'+t.data.id+'/comments','POST',{content:'Not allowed'},ck,wA)).status,403);assert.equal((await req('documents/'+d.data.id,'PATCH',{title:'bad',content:'bad'},ck,wA)).status,403);});
-test('BYOK never exposes secrets, and delayed queue cancellation needs no provider call',async()=>{const fake='sk-test-only-placeholder-not-a-real-key';const saved=await req('ai/settings','PUT',{apiKey:fake,model:'gpt-6-astra'});assert.equal(saved.status,200);const state=(await req('state')).data;assert.equal(state.ai.custom,true);assert.equal(JSON.stringify(state).includes(fake),false);const response=await fetch(base+'/api/workspace/export',{headers:{Cookie:cookieA,'x-workspace-id':wA}});assert.equal(response.status,200);assert.equal((await response.text()).includes(fake),false);const r=await req('tasks','POST',{title:'Scheduled work',description:'Wait for future',roomId:room,agentId:agent});assert.equal((await req('tasks/'+r.data.id+'/run','POST',{runAfter:new Date(Date.now()+3600000).toISOString()})).status,202);assert.equal((await req('state')).data.tasks.find(t=>t.id===r.data.id).status,'waiting');assert.equal((await req('tasks/'+r.data.id+'/cancel','POST',{})).status,200);assert.equal((await req('state')).data.tasks.find(t=>t.id===r.data.id).status,'cancelled');assert.equal((await req('ai/settings','DELETE',{})).status,200);});
-test('MFA enrollment invalidates old sessions and recovery codes are single-use',async()=>{const r=await req('register','POST',{email:'mfa@example.com',password:'mfa-long-password-123',name:'MFA User',workspace:'MFA Org'},null,'');let ck=r.cookie;const setup=await req('account/mfa/setup','POST',{password:'mfa-long-password-123'},ck,'');assert.equal(setup.status,200);const enrolled=await req('account/mfa/verify','POST',{code:totp(setup.data.secret)},ck,'');assert.equal(enrolled.status,200);assert.equal(enrolled.data.recoveryCodes.length,8);assert.equal((await req('me','GET',null,ck,'')).status,401);const withoutCode=await req('login','POST',{email:'mfa@example.com',password:'mfa-long-password-123'},null,'');assert.equal(withoutCode.status,401);const withCode=await req('login','POST',{email:'mfa@example.com',password:'mfa-long-password-123',mfaCode:enrolled.data.recoveryCodes[0]},null,'');assert.equal(withCode.status,200);const replay=await req('login','POST',{email:'mfa@example.com',password:'mfa-long-password-123',mfaCode:enrolled.data.recoveryCodes[0]},null,'');assert.equal(replay.status,401);});
-test('logout revokes server-side session',async()=>{assert.equal((await req('logout','POST',{})).status,200);assert.equal((await req('me')).status,401);});
+import { test, before, after } from "node:test";
+import { totp } from "../lib/mfa.mjs";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+const dir = mkdtempSync(join(tmpdir(), "rainy-test-"));
+let child, base, cookieA, cookieB, wA, wB, agent, room, task, viewerCookie;
+async function req(path, method = "GET", data, cookie = cookieA, w = wA) {
+  const r = await fetch(base + "/api/" + path, {
+    method,
+    headers: {
+      Origin: base,
+      "Content-Type": "application/json",
+      ...(cookie ? { Cookie: cookie } : {}),
+      "x-workspace-id": w || "",
+    },
+    ...(data ? { body: JSON.stringify(data) } : {}),
+  });
+  return {
+    status: r.status,
+    data: await r.json(),
+    cookie: r.headers.get("set-cookie")?.split(";")[0],
+  };
+}
+before(async () => {
+  child = spawn(process.execPath, ["server.mjs"], {
+    env: {
+      ...process.env,
+      PORT: "0",
+      DB_PATH: join(dir, "test.sqlite"),
+      OPENAI_API_KEY: "",
+      NODE_ENV: "test",
+      APP_ORIGIN: "",
+      WORKSPACE_SECRET_KEY: Buffer.alloc(32, 3).toString("base64"),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  await new Promise((ok, no) => {
+    const timer = setTimeout(() => no(Error("startup timeout")), 10000);
+    child.stdout.on("data", (b) => {
+      const m = String(b).match(/listening on (\d+)/);
+      if (m) {
+        base = "http://127.0.0.1:" + m[1];
+        clearTimeout(timer);
+        ok();
+      }
+    });
+    child.on("exit", (c) => no(Error("server exited " + c)));
+  });
+});
+after(() => {
+  child?.kill();
+  setTimeout(() => rmSync(dir, { recursive: true, force: true }), 100);
+});
+test("unauthenticated access denied", async () =>
+  assert.equal((await req("me")).status, 401));
+test("create isolated workspaces and authenticated sessions", async () => {
+  for (const [i, email] of [
+    "alpha@example.com",
+    "beta@example.com",
+  ].entries()) {
+    const r = await req(
+      "register",
+      "POST",
+      {
+        email,
+        password: "long-password-123",
+        name: "User " + i,
+        workspace: "Org " + i,
+      },
+      null,
+      "",
+    );
+    assert.equal(r.status, 201);
+    const m = await req("me", "GET", null, r.cookie, "");
+    if (i === 0) {
+      cookieA = r.cookie;
+      wA = m.data.workspaces[0].id;
+    } else {
+      cookieB = r.cookie;
+      wB = m.data.workspaces[0].id;
+    }
+  }
+  const s = await req("state");
+  assert.equal(s.status, 200);
+  agent = s.data.agents[0].id;
+  room = s.data.rooms[0].id;
+  assert.equal(s.data.agents.length, 4);
+});
+test("cross-tenant workspace read denied", async () =>
+  assert.equal((await req("state", "GET", null, cookieB, wA)).status, 403));
+test("cross-tenant agent cannot be assigned", async () => {
+  const r = await req(
+    "tasks",
+    "POST",
+    { title: "Leak", description: "test", roomId: room, agentId: agent },
+    cookieB,
+    wB,
+  );
+  assert.equal(r.status, 400);
+});
+test("invalid JSON returns 400", async () => {
+  const r = await fetch(base + "/api/tasks", {
+    method: "POST",
+    headers: {
+      Origin: base,
+      "Content-Type": "application/json",
+      Cookie: cookieA,
+      "x-workspace-id": wA,
+    },
+    body: "{",
+  });
+  assert.equal(r.status, 400);
+});
+test("origin protection rejects forged mutation", async () => {
+  const r = await fetch(base + "/api/rooms", {
+    method: "POST",
+    headers: {
+      Origin: "https://evil.example",
+      "Content-Type": "application/json",
+      Cookie: cookieA,
+      "x-workspace-id": wA,
+    },
+    body: JSON.stringify({ name: "evil" }),
+  });
+  assert.equal(r.status, 403);
+});
+test("documents persist and task references valid tenant documents", async () => {
+  const d = await req("documents", "POST", {
+    title: "Policy",
+    content: "Internal data",
+  });
+  assert.equal(d.status, 201);
+  const r = await req("tasks", "POST", {
+    title: "Monthly report",
+    description: "Prepare a report",
+    roomId: room,
+    agentId: agent,
+    workflow: "team",
+    documentIds: [d.data.id],
+  });
+  assert.equal(r.status, 201);
+  task = r.data.id;
+  const s = await req("state");
+  assert.equal(s.data.tasks.length, 1);
+  assert.equal(s.data.documents.length, 1);
+  const other = await req("state", "GET", null, cookieB, wB);
+  assert.equal(other.data.tasks.length, 0);
+  assert.equal(other.data.documents.length, 0);
+});
+test("missing API key returns honest 503 without fake output", async () => {
+  const r = await req("tasks/" + task + "/run", "POST", {});
+  assert.equal(r.status, 503);
+  const s = await req("state");
+  assert.equal(s.data.outputs.length, 0);
+  assert.equal(s.data.tasks[0].status, "queued");
+});
+test("approval cannot skip AI completion/review", async () =>
+  assert.equal(
+    (await req("tasks/" + task + "/approve", "POST", {})).status,
+    409,
+  ));
+test("invites are single-use and viewer is read-only", async () => {
+  const invite = await req("invites", "POST", {
+    role: "viewer",
+    email: "beta@example.com",
+  });
+  assert.equal(invite.status, 200);
+  assert.equal(
+    (await req("join", "POST", { token: invite.data.token }, cookieB, ""))
+      .status,
+    200,
+  );
+  viewerCookie = cookieB;
+  assert.equal(
+    (await req("join", "POST", { token: invite.data.token }, cookieB, ""))
+      .status,
+    400,
+  );
+  assert.equal((await req("state", "GET", null, viewerCookie, wA)).status, 200);
+  assert.equal(
+    (await req("rooms", "POST", { name: "forbidden" }, viewerCookie, wA))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await req("agents", "POST", { name: "bad" }, viewerCookie, wA)).status,
+    403,
+  );
+  assert.equal(
+    (await req("invites", "POST", { role: "admin" }, viewerCookie, wA)).status,
+    403,
+  );
+});
+test("login rejects invalid passwords and cookie is HttpOnly", async () => {
+  assert.equal(
+    (
+      await req("login", "POST", {
+        email: "alpha@example.com",
+        password: "wrong",
+      })
+    ).status,
+    401,
+  );
+  const r = await fetch(base + "/api/login", {
+    method: "POST",
+    headers: { Origin: base, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: "alpha@example.com",
+      password: "long-password-123",
+    }),
+  });
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("set-cookie"), /HttpOnly/);
+  assert.match(r.headers.get("set-cookie"), /SameSite=Strict/);
+});
+test("same user can create a second isolated workspace", async () => {
+  const r = await req("workspaces", "POST", { name: "Second organization" });
+  assert.equal(r.status, 201);
+  const m = await req("me");
+  assert.equal(m.data.workspaces.length, 2);
+  const second = await req("state", "GET", null, cookieA, r.data.id);
+  assert.equal(second.data.documents.length, 0);
+  assert.equal(second.data.tasks.length, 0);
+  assert.equal(
+    (await req("state", "GET", null, cookieB, r.data.id)).status,
+    403,
+  );
+});
+test("invites bind to recipient email and can be revoked", async () => {
+  const i = await req("invites", "POST", {
+    role: "member",
+    email: "somebody@example.com",
+  });
+  assert.equal(i.status, 200);
+  assert.equal(
+    (await req("join", "POST", { token: i.data.token }, cookieB, "")).status,
+    400,
+  );
+  const inv = (await req("state")).data.invites.find(
+    (x) => x.email === "somebody@example.com",
+  );
+  assert.ok(inv);
+  assert.equal((await req("invites/" + inv.id, "DELETE", {})).status, 200);
+  assert.equal(
+    (await req("state")).data.invites.some((x) => x.id === inv.id),
+    false,
+  );
+});
+test("owner is protected and viewer cannot promote itself", async () => {
+  const s = (await req("state")).data,
+    owner = s.members.find((m) => m.role === "owner"),
+    v = s.members.find((m) => m.role === "viewer");
+  assert.equal((await req("members/" + owner.id, "DELETE", {})).status, 403);
+  assert.equal(
+    (await req("members/" + v.id, "PATCH", { role: "admin" }, cookieB, wA))
+      .status,
+    403,
+  );
+});
+test("membership role changes and removal enforce immediately", async () => {
+  const s = (await req("state")).data,
+    v = s.members.find((m) => m.role === "viewer");
+  assert.equal(
+    (await req("members/" + v.id, "PATCH", { role: "member" })).status,
+    200,
+  );
+  assert.equal(
+    (await req("rooms", "POST", { name: "Member permitted" }, cookieB, wA))
+      .status,
+    201,
+  );
+  assert.equal((await req("members/" + v.id, "DELETE", {})).status, 200);
+  assert.equal((await req("state", "GET", null, cookieB, wA)).status, 403);
+});
+test("cross-workspace task mutations and agent IDs are rejected", async () => {
+  assert.equal(
+    (await req("tasks/" + task + "/approve", "POST", {}, cookieB, wB)).status,
+    404,
+  );
+  const s = (await req("state", "GET", null, cookieB, wB)).data;
+  assert.equal(
+    (
+      await req(
+        "tasks",
+        "POST",
+        {
+          title: "Unauthorized specialist",
+          description: "bad",
+          roomId: s.rooms[0].id,
+          agentId: s.agents[0].id,
+          agentIds: [s.agents[0].id, agent],
+        },
+        cookieB,
+        wB,
+      )
+    ).status,
+    400,
+  );
+});
+test("3D modules served locally, traversal rejected", async () => {
+  for (const path of [
+    "/office3d.js",
+    "/vendor/three.module.js",
+    "/vendor/three.core.js",
+    "/vendor/OrbitControls.js",
+  ]) {
+    const r = await fetch(base + path);
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get("content-type"), /javascript/);
+  }
+  assert.equal((await fetch(base + "/vendor/package.json")).status, 404);
+  const controls = await (
+    await fetch(base + "/vendor/OrbitControls.js")
+  ).text();
+  assert.ok(controls.includes("from '/vendor/three.module.js'"));
+});
+test("revoke all sessions invalidates every login for a user", async () => {
+  const r = await req("login", "POST", {
+    email: "beta@example.com",
+    password: "long-password-123",
+  });
+  assert.equal(r.status, 200);
+  assert.equal(
+    (await req("sessions/revoke", "POST", {}, r.cookie, wB)).status,
+    200,
+  );
+  assert.equal((await req("me", "GET", null, cookieB, wB)).status, 401);
+  assert.equal((await req("me", "GET", null, r.cookie, wB)).status, 401);
+});
+test("room environment persists and respects tenant boundaries", async () => {
+  const r = await req("rooms", "POST", {
+    name: "Engineering",
+    type: "development",
+  });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.type, "development");
+  assert.equal(
+    (await req("rooms/" + r.data.id, "PATCH", { type: "education" })).status,
+    200,
+  );
+  assert.equal(
+    (await req("state")).data.rooms.find((x) => x.id === r.data.id).type,
+    "education",
+  );
+  assert.equal(
+    (await req("rooms/" + r.data.id, "PATCH", { type: "anything" })).status,
+    400,
+  );
+});
+test("import, revision and workflow templates are workspace scoped", async () => {
+  const r = await req("documents/import", "POST", {
+    name: "policy.txt",
+    data: Buffer.from("Байгууллагын шинэ журам").toString("base64"),
+  });
+  assert.equal(r.status, 201);
+  assert.match(r.data.content, /журам/);
+  const edited = await req("documents/" + r.data.id, "PATCH", {
+    title: "Policy v2",
+    content: "Шинэ хувилбар",
+  });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.data.version, 2);
+  assert.equal(
+    (await req("state")).data.documentVersions.some(
+      (v) => v.documentId === r.data.id,
+    ),
+    true,
+  );
+  const workflow = await req("workflows", "POST", {
+    name: "Monthly report",
+    description: "Prepare summary",
+    agentIds: [agent],
+  });
+  assert.equal(workflow.status, 201);
+  assert.equal((await req("state")).data.workflows.length, 1);
+  assert.equal(
+    (
+      await req(
+        "documents/" + r.data.id,
+        "PATCH",
+        { title: "bad", content: "bad" },
+        "invalid-cookie",
+        wA,
+      )
+    ).status,
+    401,
+  );
+});
+test("private rooms protect documents, tasks and direct mutations from another member", async () => {
+  const account = await req(
+    "register",
+    "POST",
+    {
+      email: "restricted@example.com",
+      password: "restricted-user-123",
+      name: "Restricted",
+      workspace: "Other Org",
+    },
+    null,
+    "",
+  );
+  const ck = account.cookie;
+  const invite = await req("invites", "POST", {
+    email: "restricted@example.com",
+    role: "member",
+  });
+  assert.equal(
+    (await req("join", "POST", { token: invite.data.token }, ck, "")).status,
+    200,
+  );
+  const r = await req("rooms", "POST", { name: "Confidential HR", type: "hr" });
+  assert.equal(
+    (
+      await req("rooms/" + r.data.id, "PATCH", {
+        type: "hr",
+        private: true,
+        allowedUserIds: [],
+      })
+    ).status,
+    200,
+  );
+  const d = await req("documents", "POST", {
+    title: "Private salary",
+    content: "Sensitive test data",
+    roomId: r.data.id,
+  });
+  assert.equal(d.status, 201);
+  const t = await req("tasks", "POST", {
+    title: "HR task",
+    description: "Private task",
+    roomId: r.data.id,
+    agentId: agent,
+    documentIds: [d.data.id],
+  });
+  assert.equal(t.status, 201);
+  const state = (await req("state", "GET", null, ck, wA)).data;
+  assert.equal(
+    state.rooms.some((x) => x.id === r.data.id),
+    false,
+  );
+  assert.equal(
+    state.documents.some((x) => x.id === d.data.id),
+    false,
+  );
+  assert.equal(
+    state.tasks.some((x) => x.id === t.data.id),
+    false,
+  );
+  assert.equal(
+    (
+      await req(
+        "tasks/" + t.data.id + "/comments",
+        "POST",
+        { content: "Not allowed" },
+        ck,
+        wA,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await req(
+        "documents/" + d.data.id,
+        "PATCH",
+        { title: "bad", content: "bad" },
+        ck,
+        wA,
+      )
+    ).status,
+    403,
+  );
+});
+test("BYOK never exposes secrets, and delayed queue cancellation needs no provider call", async () => {
+  const fake = "sk-test-only-placeholder-not-a-real-key";
+  const saved = await req("ai/settings", "PUT", {
+    apiKey: fake,
+    model: "gpt-6-astra",
+  });
+  assert.equal(saved.status, 200);
+  const state = (await req("state")).data;
+  assert.equal(state.ai.custom, true);
+  assert.equal(JSON.stringify(state).includes(fake), false);
+  const response = await fetch(base + "/api/workspace/export", {
+    headers: { Cookie: cookieA, "x-workspace-id": wA },
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.text()).includes(fake), false);
+  const r = await req("tasks", "POST", {
+    title: "Scheduled work",
+    description: "Wait for future",
+    roomId: room,
+    agentId: agent,
+  });
+  assert.equal(
+    (
+      await req("tasks/" + r.data.id + "/run", "POST", {
+        runAfter: new Date(Date.now() + 3600000).toISOString(),
+      })
+    ).status,
+    202,
+  );
+  assert.equal(
+    (await req("state")).data.tasks.find((t) => t.id === r.data.id).status,
+    "waiting",
+  );
+  assert.equal(
+    (await req("tasks/" + r.data.id + "/cancel", "POST", {})).status,
+    200,
+  );
+  assert.equal(
+    (await req("state")).data.tasks.find((t) => t.id === r.data.id).status,
+    "cancelled",
+  );
+  assert.equal((await req("ai/settings", "DELETE", {})).status, 200);
+});
+test("MFA enrollment invalidates old sessions and recovery codes are single-use", async () => {
+  const r = await req(
+    "register",
+    "POST",
+    {
+      email: "mfa@example.com",
+      password: "mfa-long-password-123",
+      name: "MFA User",
+      workspace: "MFA Org",
+    },
+    null,
+    "",
+  );
+  let ck = r.cookie;
+  const setup = await req(
+    "account/mfa/setup",
+    "POST",
+    { password: "mfa-long-password-123" },
+    ck,
+    "",
+  );
+  assert.equal(setup.status, 200);
+  const enrolled = await req(
+    "account/mfa/verify",
+    "POST",
+    { code: totp(setup.data.secret) },
+    ck,
+    "",
+  );
+  assert.equal(enrolled.status, 200);
+  assert.equal(enrolled.data.recoveryCodes.length, 8);
+  assert.equal((await req("me", "GET", null, ck, "")).status, 401);
+  const withoutCode = await req(
+    "login",
+    "POST",
+    { email: "mfa@example.com", password: "mfa-long-password-123" },
+    null,
+    "",
+  );
+  assert.equal(withoutCode.status, 401);
+  const withCode = await req(
+    "login",
+    "POST",
+    {
+      email: "mfa@example.com",
+      password: "mfa-long-password-123",
+      mfaCode: enrolled.data.recoveryCodes[0],
+    },
+    null,
+    "",
+  );
+  assert.equal(withCode.status, 200);
+  const replay = await req(
+    "login",
+    "POST",
+    {
+      email: "mfa@example.com",
+      password: "mfa-long-password-123",
+      mfaCode: enrolled.data.recoveryCodes[0],
+    },
+    null,
+    "",
+  );
+  assert.equal(replay.status, 401);
+});
+test("service configuration is tenant scoped and unconfigured providers fail without fake success", async () => {
+  const info = await req("services");
+  assert.equal(info.status, 200);
+  assert.equal(info.data.mail.configured, false);
+  assert.equal(info.data.billing.configured, false);
+  assert.equal(info.data.integrations.length, 3);
+  assert.equal((await req("services", "GET", null, cookieA, wB)).status, 403);
+  assert.equal(
+    (await req("services/billing/orders", "POST", { plan: "forged" })).status,
+    503,
+  );
+  assert.equal(
+    (await req("services/integrations/gmail/start", "POST", {})).status,
+    503,
+  );
+  assert.equal((await req("account/verify/send", "POST", {})).status, 503);
+  assert.equal(
+    (
+      await req(
+        "auth/reset",
+        "POST",
+        { token: "forged", password: "new-password-123" },
+        null,
+        "",
+      )
+    ).status,
+    400,
+  );
+  const exported = await fetch(base + "/api/workspace/export", {
+    headers: { Cookie: cookieA, "x-workspace-id": wA },
+  });
+  const data = await exported.json();
+  assert.equal(Object.hasOwn(data, "integrations"), false);
+  assert.equal(Object.hasOwn(data, "billing"), false);
+});
+test("logout revokes server-side session", async () => {
+  assert.equal((await req("logout", "POST", {})).status, 200);
+  assert.equal((await req("me")).status, 401);
+});

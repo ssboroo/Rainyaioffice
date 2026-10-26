@@ -15,6 +15,19 @@ const $ = (s) => document.querySelector(s),
   app = $("#app"),
   modal = $("#modal");
 let isDemo = false;
+let appDisposed = false;
+let serviceState = null,
+  serviceWorkspace = null,
+  serviceLoading = false;
+const authFragment = new URLSearchParams(window.location.hash.slice(1));
+const recoveryToken = authFragment.get("reset") || authFragment.get("verify");
+const recoveryMode = authFragment.has("reset")
+  ? "reset"
+  : authFragment.has("verify")
+    ? "verify"
+    : null;
+if (recoveryMode)
+  window.history.replaceState(null, "", window.location.pathname);
 const previousWorkspace = localStorage.getItem("rainy-workspace");
 const colors = {
   coral: "#ea9a7c",
@@ -152,7 +165,9 @@ function renderAuth() {
     officeController = null;
     officeElement = null;
   }
-  app.innerHTML = `<div class="auth"><section class="auth-hero"><div class="wordmark">RAINY AI OFFICE<small>UNIVERSAL AI WORKFORCE</small></div><div><div class="eyebrow">EVERY TEAM. EVERY WORKFLOW.</div><h1>Таны дараагийн<br>багийн гишүүн.<br>AI ажилтан.</h1><p>Хүн болон AI нэг оффист. Ажлаа төлөвлөж, хуваарилж, хамтран гүйцэтгэх шинэ орчин.</p><div class="auth-sculpture">◈ ◈ ◈</div><div class="auth-features"><span>Бүх салбарт</span><span>Тусгаарлагдсан workspace</span><span>Хүний хяналт</span></div></div><small>RAINY · Хамтдаа илүү ихийг бүтээе.</small></section><section class="auth-content"><div class="auth-box"><div class="eyebrow">RAINY AI OFFICE</div><h2>${authMode === "login" ? "Эргээд тавтай морил" : "AI багаа байгуулъя"}</h2><p>${authMode === "login" ? "Таны хүмүүс, AI ажилтнууд, бүх ажил нэг дор." : "Байгууллага, бизнес, баг болон хувь хүнд зориулсан нэгдсэн ажлын орчин."}</p><form id="auth-form">${authMode === "register" ? field("name", "Таны нэр") + field("workspace", "Байгууллага / багийн нэр") : ""}${field("email", "И-мэйл", "email")}${field("password", "Нууц үг" + (authMode === "register" ? " · 12-оос дээш тэмдэгт" : ""), "password")}${authMode === "login" ? field("mfaCode", "2FA / recovery код · идэвхжүүлсэн бол", "text", "", false) : ""}<div class="error" role="alert"></div><button type="submit" class="btn primary">${authMode === "login" ? "Нэвтрэх →" : "Workspace үүсгэх →"}</button></form><div class="auth-demo"><button class="btn" id="open-demo">3D демо workspace үзэх ↗</button><small>Бүртгэлгүй · Зөвхөн үзэх</small></div><div class="auth-switch"><button id="switch-auth" class="text-btn">${authMode === "login" ? "Шинэ workspace үүсгэх" : "Бүртгэлтэй юу? Нэвтрэх"}</button></div><p style="font-size:10px;margin-top:30px">AI-ийн үр дүн нь төсөл байна. Эцсийн шийдвэрийг эрх бүхий хүн баталгаажуулна.</p></div></section></div>`;
+  app.innerHTML = `<div class="auth"><section class="auth-hero"><div class="wordmark">RAINY AI OFFICE<small>UNIVERSAL AI WORKFORCE</small></div><div><div class="eyebrow">EVERY TEAM. EVERY WORKFLOW.</div><h1>Таны дараагийн<br>багийн гишүүн.<br>AI ажилтан.</h1><p>Хүн болон AI нэг оффист. Ажлаа төлөвлөж, хуваарилж, хамтран гүйцэтгэх шинэ орчин.</p><div class="auth-sculpture">◈ ◈ ◈</div><div class="auth-features"><span>Бүх салбарт</span><span>Тусгаарлагдсан workspace</span><span>Хүний хяналт</span></div></div><small>RAINY · Хамтдаа илүү ихийг бүтээе.</small></section><section class="auth-content"><div class="auth-box"><div class="eyebrow">RAINY AI OFFICE</div><h2>${authMode === "login" ? "Эргээд тавтай морил" : "AI багаа байгуулъя"}</h2><p>${authMode === "login" ? "Таны хүмүүс, AI ажилтнууд, бүх ажил нэг дор." : "Байгууллага, бизнес, баг болон хувь хүнд зориулсан нэгдсэн ажлын орчин."}</p><form id="auth-form">${authMode === "register" ? field("name", "Таны нэр") + field("workspace", "Байгууллага / багийн нэр") : ""}${field("email", "И-мэйл", "email")}${field("password", "Нууц үг" + (authMode === "register" ? " · 12-оос дээш тэмдэгт" : ""), "password")}${authMode === "login" ? field("mfaCode", "2FA / recovery код · идэвхжүүлсэн бол", "text", "", false) : ""}<div class="error" role="alert"></div><button type="submit" class="btn primary">${authMode === "login" ? "Нэвтрэх →" : "Workspace үүсгэх →"}</button></form><button class="text-link" id="forgot-password" style="margin-top:14px">Нууц үгээ мартсан уу?</button><div class="auth-demo"><button class="btn" id="open-demo">3D демо workspace үзэх ↗</button><small>Бүртгэлгүй · Зөвхөн үзэх</small></div><div class="auth-switch"><button id="switch-auth" class="text-btn">${authMode === "login" ? "Шинэ workspace үүсгэх" : "Бүртгэлтэй юу? Нэвтрэх"}</button></div><p style="font-size:10px;margin-top:30px">AI-ийн үр дүн нь төсөл байна. Эцсийн шийдвэрийг эрх бүхий хүн баталгаажуулна.</p></div></section></div>`;
+  if ($("#forgot-password"))
+    $("#forgot-password").onclick = () => recoveryScreen("forgot");
   if ($("#open-demo")) $("#open-demo").onclick = () => openDemo();
   $("#switch-auth").onclick = () => {
     authMode = authMode === "login" ? "register" : "login";
@@ -167,12 +182,24 @@ function renderAuth() {
   };
 }
 async function boot() {
+  serviceState = null;
+  serviceWorkspace = null;
   try {
     me = await api("me");
     if (!me.workspaces.some((w) => w.id === workspace))
       workspace = me.workspaces[0]?.id;
     localStorage.setItem("rainy-workspace", workspace);
+    if (authFragment.has("integration")) {
+      view = "settings";
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     await refresh();
+    if (authFragment.has("integration"))
+      toast(
+        authFragment.get("integration") === "connected"
+          ? "Account холбогдлоо"
+          : "Холболт амжилтгүй. OAuth тохиргоо болон зөвшөөрлөө шалгана уу.",
+      );
   } catch (e) {
     if (!me) renderAuth();
     else toast(e.message);
@@ -210,6 +237,7 @@ function renderApp() {
   });
   bind();
   bindExtras();
+  bindServices();
   if (view === "office") syncOffice();
 }
 function renderPage() {
@@ -303,7 +331,7 @@ function auditView() {
 }
 function settingsView() {
   const ws = me.workspaces.find((w) => w.id === workspace);
-  return `<div class="page-heading"><div><div class="eyebrow">YOUR ORGANIZATION, YOUR RULES</div><h1>Тохиргоо<span class="heading-spark">✦</span></h1><p>Багийн эрх, AI холболт, мэдээллийн хамгаалалт.</p></div></div><div class="settings">${aiSettingsCard()}<div class="card"><div class="flex spaced"><h3>Өгөгдөл ба нэвтрэлт</h3><span class="tag">SECURITY</span></div><p>Байгууллагын өгөгдлөө JSON-оор экспортлох, нууц үгээ солих боломжтой.</p><div class="flex" style="margin-top:16px"><button class="btn" data-backup>Workspace экспорт</button><button class="btn" data-password>Нууц үг солих</button></div></div><div class="card"><h3>Workspace</h3><label class="field"><span>Байгууллага сонгох</span><select id="workspace-select">${me.workspaces.map((w) => `<option value="${w.id}" ${w.id === workspace ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label><div class="flex spaced"><span class="tag">Таны эрх: ${esc(ws.role)}</span><button class="btn" data-newworkspace>＋ Workspace</button></div></div><div class="card"><div class="flex spaced"><h3>Хүмүүс ба хамтын ажиллагаа</h3><button class="btn" data-invite>＋ Урих</button></div>${state.members.map((m) => `<div class="flex spaced" style="padding:13px 0;border-bottom:1px solid #eef1ed"><span>${esc(m.name)}<br><small>${esc(m.email)}</small></span><span class="flex"><span class="tag">${esc(m.role)}</span>${m.role !== "owner" && m.id !== me.user.id && ["owner", "admin"].includes(ws.role) ? `<button class="text-btn" data-member="${m.id}">Удирдах</button>` : ""}</span></div>`).join("")}<button class="text-btn" data-join style="margin-top:20px">Урилгын кодоор өөр багт нэгдэх</button></div><div class="card"><h3>Идэвхтэй урилгууд</h3>${(state.invites || []).map((i) => `<div class="flex spaced" style="padding:10px 0"><span>${esc(i.email)}<br><small>${esc(i.role)} · ${new Date(i.expires).toLocaleString("mn-MN")}</small></span><button class="text-btn" data-cancelinvite="${i.id}">Цуцлах</button></div>`).join("") || "<p>Идэвхтэй урилга алга.</p>"}</div><div class="card"><h3>Нэвтрэлтийн хамгаалалт</h3><p>2FA: ${me.mfaEnabled ? "Идэвхтэй" : "Идэвхжээгүй"}</p><button class="btn" data-mfa style="margin-top:12px">${me.mfaEnabled ? "2FA удирдах" : "Authenticator 2FA идэвхжүүлэх"}</button><p>Бүх төхөөрөмжийн одоогийн нэвтрэлтийг хүчингүй болгоно.</p><button class="btn danger" data-revoke style="margin-top:15px">Бүх төхөөрөмжөөс гарах</button></div><div class="card"><h3>AI үйлчилгээ</h3><span class="tag">${state.ai?.configured ? "AI түлхүүр тохируулагдсан" : "Түлхүүр тохируулагдаагүй"}</span><p>Түлхүүр зөвхөн серверт хадгалагдана. Өдрийн лимит: ${state.limit} дуудлага. Багийн workflow нь төлөвлөгч + сонгосон мэргэжилтнүүд + хянагчийн дуудлагуудыг ашиглана. API төлбөр нь тусдаа; мөнгөн төсвийн хатуу хязгаарыг одоогоор энэ систем тооцохгүй.</p></div><div class="card"><h3>Одоогийн хувилбар · 0.3</h3><p>Universal Core + WebGL 3D + олон AI ажилтны хяналттай workflow. Гадаад OAuth интеграц, төлбөр, календарь болон нийтлэх/төлөх автомат үйлдлүүд хараахан холбогдоогүй.</p></div></div>`;
+  return `<div class="page-heading"><div><div class="eyebrow">YOUR ORGANIZATION, YOUR RULES</div><h1>Тохиргоо<span class="heading-spark">✦</span></h1><p>Багийн эрх, AI холболт, мэдээллийн хамгаалалт.</p></div></div><div class="settings">${serviceCards()}${aiSettingsCard()}<div class="card"><div class="flex spaced"><h3>Өгөгдөл ба нэвтрэлт</h3><span class="tag">SECURITY</span></div><p>Байгууллагын өгөгдлөө JSON-оор экспортлох, нууц үгээ солих боломжтой.</p><div class="flex" style="margin-top:16px"><button class="btn" data-backup>Workspace экспорт</button><button class="btn" data-password>Нууц үг солих</button></div></div><div class="card"><h3>Workspace</h3><label class="field"><span>Байгууллага сонгох</span><select id="workspace-select">${me.workspaces.map((w) => `<option value="${w.id}" ${w.id === workspace ? "selected" : ""}>${esc(w.name)}</option>`).join("")}</select></label><div class="flex spaced"><span class="tag">Таны эрх: ${esc(ws.role)}</span><button class="btn" data-newworkspace>＋ Workspace</button></div></div><div class="card"><div class="flex spaced"><h3>Хүмүүс ба хамтын ажиллагаа</h3><button class="btn" data-invite>＋ Урих</button></div>${state.members.map((m) => `<div class="flex spaced" style="padding:13px 0;border-bottom:1px solid #eef1ed"><span>${esc(m.name)}<br><small>${esc(m.email)}</small></span><span class="flex"><span class="tag">${esc(m.role)}</span>${m.role !== "owner" && m.id !== me.user.id && ["owner", "admin"].includes(ws.role) ? `<button class="text-btn" data-member="${m.id}">Удирдах</button>` : ""}</span></div>`).join("")}<button class="text-btn" data-join style="margin-top:20px">Урилгын кодоор өөр багт нэгдэх</button></div><div class="card"><h3>Идэвхтэй урилгууд</h3>${(state.invites || []).map((i) => `<div class="flex spaced" style="padding:10px 0"><span>${esc(i.email)}<br><small>${esc(i.role)} · ${new Date(i.expires).toLocaleString("mn-MN")}</small></span><button class="text-btn" data-cancelinvite="${i.id}">Цуцлах</button></div>`).join("") || "<p>Идэвхтэй урилга алга.</p>"}</div><div class="card"><h3>Нэвтрэлтийн хамгаалалт</h3><p>2FA: ${me.mfaEnabled ? "Идэвхтэй" : "Идэвхжээгүй"}</p><button class="btn" data-mfa style="margin-top:12px">${me.mfaEnabled ? "2FA удирдах" : "Authenticator 2FA идэвхжүүлэх"}</button><p>Бүх төхөөрөмжийн одоогийн нэвтрэлтийг хүчингүй болгоно.</p><button class="btn danger" data-revoke style="margin-top:15px">Бүх төхөөрөмжөөс гарах</button></div><div class="card"><h3>AI үйлчилгээ</h3><span class="tag">${state.ai?.configured ? "AI түлхүүр тохируулагдсан" : "Түлхүүр тохируулагдаагүй"}</span><p>Түлхүүр зөвхөн серверт хадгалагдана. Өдрийн лимит: ${state.limit} дуудлага. Багийн workflow нь төлөвлөгч + сонгосон мэргэжилтнүүд + хянагчийн дуудлагуудыг ашиглана. API төлбөр нь тусдаа; мөнгөн төсвийн хатуу хязгаарыг одоогоор энэ систем тооцохгүй.</p></div><div class="card"><h3>Одоогийн хувилбар · 0.4</h3><p>Universal Core + WebGL 3D + олон AI ажилтны хяналттай workflow. QPay, имэйл баталгаажуулалт, нууц үг сэргээх, тусдаа backup болон Gmail/Calendar/HubSpot унших холболт нэмэгдсэн. Гаднын үйлчилгээний эрх, домэйн болон merchant тохиргоо шаардлагатай.</p></div></div>`;
 }
 function newTask(initial = "", agent = selectedAgent) {
   showModal(
@@ -1152,10 +1180,12 @@ const pollTimer = setInterval(async () => {
     busy = false;
   }
 }, 6000);
-if (window.location.hash === "#demo") openDemo();
+if (recoveryMode) recoveryScreen(recoveryMode);
+else if (window.location.hash === "#demo") openDemo();
 else await boot();
 
 export function disposeApp() {
+  appDisposed = true;
   clearInterval(pollTimer);
   officeController?.destroy();
 }
@@ -1236,4 +1266,179 @@ function openDemo() {
   selectedAgent = "a1";
   window.history.replaceState(null, "", window.location.pathname + "#demo");
   renderApp();
+}
+
+function recoveryScreen(mode) {
+  renderAuth();
+  const box = $(".auth-box");
+  box.innerHTML = `<div class="eyebrow">ACCOUNT SECURITY</div><h2>${mode === "forgot" ? "Нууц үг сэргээх" : mode === "reset" ? "Шинэ нууц үг" : "И-мэйл баталгаажуулах"}</h2><p>${mode === "forgot" ? "Бүртгэлтэй и-мэйл хаягт 30 минутын хүчинтэй холбоос илгээнэ." : mode === "reset" ? "Шинэ нууц үг хадгалахад бүх төхөөрөмжөөс гарна. 2FA хэвээр үлдэнэ." : "Баталгаажуулах товчийг дарж и-мэйлээ батална уу."}</p><form id="recovery-form">${mode === "forgot" ? field("email", "И-мэйл", "email") : mode === "reset" ? field("password", "Шинэ нууц үг · 12-оос дээш тэмдэгт", "password") + field("confirm", "Нууц үг давтах", "password") : ""}<div class="error" role="alert"></div><button class="btn primary" type="submit">${mode === "verify" ? "Баталгаажуулах" : "Үргэлжлүүлэх"}</button></form><button class="text-link" id="back-login" style="margin-top:20px">Нэвтрэх хэсэгт буцах</button><p id="recovery-result" role="status"></p>`;
+  $("#back-login").onclick = () => {
+    authMode = "login";
+    renderAuth();
+  };
+  $("#recovery-form").onsubmit = (e) => {
+    e.preventDefault();
+    submitForm(e.target, async (b) => {
+      if (mode === "reset" && b.password !== b.confirm)
+        throw Error("Нууц үгүүд ижил биш");
+      const r = await api("auth/" + mode, "POST", {
+        ...b,
+        token: recoveryToken,
+      });
+      e.target.hidden = true;
+      $("#recovery-result").textContent =
+        mode === "forgot"
+          ? r.message
+          : mode === "verify"
+            ? "И-мэйл баталгаажлаа. Нэвтэрч үргэлжлүүлнэ үү."
+            : "Нууц үг шинэчлэгдлээ. Шинэ нууц үгээрээ нэвтэрнэ үү.";
+    });
+  };
+}
+function serviceCards() {
+  const s = serviceWorkspace === workspace ? serviceState : null,
+    admin = ["owner", "admin"].includes(
+      me.workspaces.find((w) => w.id === workspace)?.role,
+    ),
+    edit = ["owner", "admin", "member"].includes(
+      me.workspaces.find((w) => w.id === workspace)?.role,
+    );
+  if (!s)
+    return `<section class="card service-loading"><h3>Үйлчилгээний холболтууд</h3><p role="status">Төлбөр, имэйл, backup, интеграцийн тохиргоог уншиж байна…</p><button class="btn" data-refreshservices>Дахин шалгах</button></section>`;
+  return `<section class="card"><div class="eyebrow">VERIFIED IDENTITY</div><h3>И-мэйл баталгаажуулалт</h3><p>${esc(me.user.email)}</p><span class="status ${s.mail.verified ? "approved" : "queued"}">${s.mail.verified ? "Баталгаажсан" : "Баталгаажаагүй"}</span><p>${s.mail.configured ? "Баталгаажуулах холбоос и-мэйлд илгээнэ. 24 цаг хүчинтэй." : "Имэйл үйлчилгээ идэвхжээгүй. Системийн админ илгээх домэйн ба үйлчилгээний эрхийг тохируулна."}</p>${!s.mail.verified ? `<button class="btn" data-sendverify ${!s.mail.configured ? "disabled" : ""}>Баталгаажуулах холбоос илгээх</button>` : ""}</section>
+ <section class="card"><div class="eyebrow">ENCRYPTED OFFSITE BACKUP</div><h3>Серверээс тусдаа нөөц</h3><button class="text-link" data-refreshservices>Төлөв шинэчлэх ↻</button><span class="status ${s.backup.lastSuccess ? "approved" : "queued"}">${s.backup.lastSuccess ? "Хадгалагдсан" : s.backup.configured ? "Эхний backup хүлээгдэж байна" : "Тохиргоо шаардлагатай"}</span><p>${s.backup.lastSuccess ? "Сүүлд: " + new Date(s.backup.lastSuccess).toLocaleString("mn-MN") : "Өдөр бүр шифрлэсэн SQLite snapshot тусдаа object storage руу хадгална."}</p>${s.backup.error ? `<p class="error">${esc(s.backup.error)}</p>` : ""}<small>Нөөц сэргээх ажиллагааг системийн админ тусдаа файлд баталгаажуулж гүйцэтгэнэ.</small></section>
+ <section class="card service-wide"><div class="flex spaced"><div><div class="eyebrow">YOUR WORKSPACE PLAN</div><h3>Багц ба QPay төлбөр</h3></div><span class="tag">MNT · Автомат таталтгүй</span></div>${!admin ? "<p>Төлбөр ба багцыг owner/admin удирдана.</p>" : `<p>${s.billing.subscription?.active ? `Идэвхтэй: ${esc(s.billing.subscription.plan)} · ${new Date(s.billing.subscription.expires).toLocaleDateString("mn-MN")} хүртэл` : "Идэвхтэй төлбөртэй багц алга."} ${s.billing.enforced ? "AI ажиллуулахад идэвхтэй багц шаардлагатай." : "Одоогоор туршилтын хандалт нээлттэй."}</p>${s.billing.sandbox ? '<div class="banner">QPay Sandbox · бодит мөнгөний төлбөр биш</div>' : ""}${!s.billing.configured ? '<div class="banner">QPay merchant эрх болон багцын үнэ тохируулагдаагүй. Одоогоор төлбөр авахгүй.</div>' : ""}<div class="billing-plans">${s.billing.plans.map((p) => `<article><h3>${esc(p.name)}</h3><strong>${p.amount.toLocaleString("mn-MN")}₮</strong><p>${p.days} хоног · өдөрт ${p.dailyCalls} AI дуудлага</p><small>OpenAI API төлбөр тусдаа.</small><button class="btn primary" data-buyplan="${p.id}" ${!s.billing.configured ? "disabled" : ""}>QPay-аар сунгах</button></article>`).join("")}</div><details class="billing-history"><summary>Төлбөрийн түүх (${s.billing.orders.length})</summary>${s.billing.orders.map((o) => `<button class="service-history-row" data-order="${o.id}"><span>${esc(o.plan)} · ${o.amount.toLocaleString("mn-MN")}₮<small>${new Date(o.created).toLocaleString("mn-MN")}</small></span><b>${o.status === "paid" ? "Төлөгдсөн" : o.status === "uncertain" ? "Админ шалгах шаардлагатай" : "Хүлээгдэж байна"}</b></button>`).join("") || "<p>Төлбөрийн түүх алга.</p>"}</details>`}</section>
+ <section class="card service-wide"><div class="eyebrow">CONNECTED WORK</div><h3>И-мэйл · Календарь · CRM</h3><p>Таны холбосон account-ийн мэдээлэл эхлээд зөвхөн танд харагдана. Хувийн өрөөнд сонгож импортлосны дараа тухайн өрөөний эрхтэй хүмүүс болон owner/admin харах боломжтой. Илгээх, засах, устгах автомат үйлдэл хийхгүй.</p><div class="integration-grid">${s.integrations.map((p) => `<article><div class="integration-icon">${p.id === "gmail" ? "✉" : p.id === "calendar" ? "▦" : "◎"}</div><h3>${esc(p.name)}</h3><span class="status ${p.connected ? "approved" : "queued"}">${p.connected ? "Холбогдсон" : p.configured ? "Холбох боломжтой" : "OAuth тохиргоо хүлээгдэж байна"}</span><p>${p.id === "gmail" ? "Inbox-ийн сүүлийн 15 имэйлийн гарчиг, илгээгч, товч хэсэг" : p.id === "calendar" ? "Primary calendar-ийн дараагийн 50 үйл явдал" : "Эхний 50 харилцагчийн нэр, имэйл, байгууллага"}</p>${p.synced ? `<small>Синк: ${new Date(p.synced).toLocaleString("mn-MN")}</small>` : ""}${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}<div class="flex">${p.connected ? `<button class="btn" data-syncprovider="${p.id}" ${!edit ? "disabled" : ""}>Синк</button><button class="btn" data-provideritems="${p.id}" ${!edit ? "disabled" : ""}>Мэдээлэл</button><button class="text-link" data-disconnectprovider="${p.id}" ${!edit ? "disabled" : ""}>Салгах</button>` : `<button class="btn" data-connectprovider="${p.id}" ${!p.configured || !edit ? "disabled" : ""}>${esc(p.name)} холбох ↗</button>`}</div></article>`).join("")}</div></section>`;
+}
+async function loadServices() {
+  if (isDemo || serviceLoading || appDisposed) return;
+  serviceLoading = true;
+  try {
+    const w = workspace,
+      user = me?.user?.id,
+      data = await api("services");
+    if (!appDisposed && w === workspace && user === me?.user?.id) {
+      serviceState = data;
+      serviceWorkspace = w;
+      if (view === "settings") renderApp();
+    }
+  } catch (e) {
+    if (!appDisposed) toast(e.message);
+  } finally {
+    serviceLoading = false;
+  }
+}
+function bindServices() {
+  if (isDemo) return;
+  if (view === "settings" && serviceWorkspace !== workspace && !serviceLoading)
+    void loadServices();
+  app
+    .querySelectorAll("[data-refreshservices]")
+    .forEach((b) => (b.onclick = () => loadServices()));
+  const action = (selector, fn) =>
+    app.querySelectorAll(selector).forEach(
+      (b) =>
+        (b.onclick = async () => {
+          b.disabled = true;
+          try {
+            await fn(b);
+          } catch (e) {
+            toast(e.message);
+          } finally {
+            b.disabled = false;
+          }
+        }),
+    );
+  action("[data-sendverify]", async () => {
+    await api("account/verify/send", "POST", {});
+    toast("Баталгаажуулах холбоос илгээлээ");
+  });
+  action("[data-connectprovider]", async (b) => {
+    const r = await api(
+      "services/integrations/" + b.dataset.connectprovider + "/start",
+      "POST",
+      {},
+    );
+    window.location.assign(r.url);
+  });
+  action("[data-syncprovider]", async (b) => {
+    const r = await api(
+      "services/integrations/" + b.dataset.syncprovider + "/sync",
+      "POST",
+      {},
+    );
+    toast(r.count + " мэдээлэл синк хийлээ");
+    await loadServices();
+  });
+  action("[data-disconnectprovider]", async (b) => {
+    const r = await api(
+      "services/integrations/" + b.dataset.disconnectprovider + "/disconnect",
+      "POST",
+      {},
+    );
+    toast(r.message);
+    await loadServices();
+  });
+  action("[data-buyplan]", async (b) => {
+    const r = await api("services/billing/orders", "POST", {
+      plan: b.dataset.buyplan,
+    });
+    await loadServices();
+    showOrder(r);
+  });
+  action("[data-order]", async (b) =>
+    showOrder(await api("services/billing/orders/" + b.dataset.order)),
+  );
+  action("[data-provideritems]", async (b) => {
+    const id = b.dataset.provideritems,
+      r = await api("services/integrations/" + id + "/items");
+    showModal(
+      "Холбогдсон мэдээлэл",
+      `<p>Синк нь хязгаартай snapshot. Бүх түүхийг татахгүй.</p>${
+        r.items
+          .map(
+            (i, n) =>
+              `<section class="integration-item"><h3>${esc(i.title)}</h3><pre>${esc(i.content)}</pre><form data-importitem="${n}"><label class="field"><span>Хуваалцах хувийн өрөө</span><select name="roomId" required>${state.rooms
+                .filter((r) => r.private)
+                .map((r) => `<option value="${r.id}">${esc(r.name)}</option>`)
+                .join(
+                  "",
+                )}</select></label><small>Сонгосон өрөөний эрхтэй хүмүүс болон owner/admin энэ баримтыг харна.</small><div class="error"></div><button class="btn" type="submit" ${!state.rooms.some((r) => r.private) ? "disabled" : ""}>Мэдлэгийн санд импортлох</button></form></section>`,
+          )
+          .join("") || "<p>Өгөгдөл алга. Эхлээд синк хийнэ үү.</p>"
+      }`,
+    );
+    modal.querySelectorAll("[data-importitem]").forEach(
+      (f) =>
+        (f.onsubmit = (e) => {
+          e.preventDefault();
+          submitForm(f, async (values) => {
+            await api("services/integrations/" + id + "/import", "POST", {
+              ...values,
+              item: r.items[Number(f.dataset.importitem)].item,
+            });
+            toast("Баримт импортоллоо");
+            await refresh(false);
+          });
+        }),
+    );
+  });
+}
+function showOrder(o) {
+  showModal(
+    "QPay төлбөр",
+    `<div class="qpay-order"><h3>${o.amount.toLocaleString("mn-MN")}₮ · ${esc(o.plan)}</h3><p>Банкны апп-аар QR уншуулж төлнө. Дүнг QPay серверээс баталгаажуулсны дараа багц сунгагдана.</p>${o.qr && /^[A-Za-z0-9+/=]+$/.test(o.qr) ? `<img alt="QPay төлбөрийн QR" src="data:image/png;base64,${o.qr}">` : ""}<div class="bank-links">${(o.urls || []).map((b) => `<a href="${esc(b.link)}" rel="noreferrer noopener">${esc(b.name)} ↗</a>`).join("")}</div><p id="order-status" role="status">${o.status === "paid" ? "✓ Төлбөр баталгаажсан" : "Төлбөрийн мэдэгдэл хүлээж байна"}</p><button class="btn" id="refresh-order">Төлөв шинэчлэх</button><small>Төлбөр давтан бүү хий. Төлсөн боловч шинэчлэгдэхгүй бол админд нэхэмжлэхийн дугаарыг өгнө үү.</small><code>${esc(o.id)}</code></div>`,
+  );
+  $("#refresh-order").onclick = async () => {
+    try {
+      const next = await api("services/billing/orders/" + o.id);
+      $("#order-status").textContent =
+        next.status === "paid"
+          ? "✓ Төлбөр баталгаажсан. Багц сунгагдсан."
+          : "Төлбөрийн мэдэгдэл хүлээж байна";
+      if (next.status === "paid") await loadServices();
+    } catch (e) {
+      toast(e.message);
+    }
+  };
 }

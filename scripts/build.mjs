@@ -59,6 +59,11 @@ try {
   await cp(resolve(root, "assets"), resolve(stage, "assets"), {
     recursive: true,
   });
+  await mkdir(resolve(stage, "scripts"), { recursive: true });
+  await cp(
+    resolve(root, "scripts/restore-backup.mjs"),
+    resolve(stage, "scripts/restore-backup.mjs"),
+  );
   await cp(resolve(root, "runtime.mjs"), resolve(stage, "runtime.mjs"));
   await cp(
     resolve(root, "package-lock.json"),
@@ -73,6 +78,7 @@ try {
   const files = [
     "server.mjs",
     "runtime.mjs",
+    "scripts/restore-backup.mjs",
     "public/index.html",
     "public/style.css",
     "public/app.js",
@@ -85,6 +91,10 @@ try {
     "lib/secrets.mjs",
     "lib/mfa.mjs",
     "lib/backups.mjs",
+    "lib/mail.mjs",
+    "lib/billing.mjs",
+    "lib/integrations.mjs",
+    "lib/offsite.mjs",
     "assets/OfficeSans.ttf",
     "assets/FONT-LICENSE.txt",
     "package.json",

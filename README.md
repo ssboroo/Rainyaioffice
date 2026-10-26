@@ -1,4 +1,4 @@
-# RAINY AI OFFICE · 0.3
+# RAINY AI OFFICE · 0.4
 
 **Every team. Every workflow. AI-powered.**
 
@@ -55,7 +55,7 @@ Export AI text into TXT/MD, DOCX, PDF with embedded Mongolian/Cyrillic font, or 
 
 ## Backups
 
-`DATABASE_BACKUPS=true` creates a daily SQLite-consistent snapshot in the data directory's `backups` folder, retaining three daily snapshots, with private permissions. This protects against application mistakes, not volume loss. Add encrypted off-host backup before critical use. The automated backup test reopens a snapshot and verifies committed data. Workspace administrators can export their own organization records as JSON; credentials and MFA material are excluded. JSON reimport is not implemented.
+`DATABASE_BACKUPS=true` creates a daily SQLite-consistent snapshot in the data directory's `backups` folder, retaining three daily snapshots, with private permissions. With S3 variables configured, snapshots are also encrypted, uploaded to a separate object store, downloaded and restore-verified. See docs/OPERATIONS.md for activation and key custody. The automated backup test reopens a snapshot and verifies committed data. Workspace administrators can export their own organization records as JSON; credentials and MFA material are excluded. JSON reimport is not implemented.
 
 ## Configuration
 
@@ -101,7 +101,7 @@ Automated coverage includes tenant/private-room access, roles, sessions, single-
 
 Actual desktop/mobile GPU appearance, frame rate and a paid end-to-end AI job remain unverified. The visual direction is an editorial product workspace, not a claim of an Awwwards award or certification.
 
-Not yet implemented: email verification/recovery and SSO, billing/subscriptions, external OAuth integrations (email/calendar/CRM), webhook execution, recurring cron workflows, vector search, PPTX output, OCR, dollar-budget reconciliation, PostgreSQL/multiple replicas, off-host backup and a comprehensive independent security/load audit. No inert controls pretend these integrations are connected. Keep critical HR, financial and legal actions under human review; approval only changes internal status and never sends or pays anything externally.
+Not yet implemented: SSO, write-capable external agent tools, webhook workflow execution, recurring cron workflows, vector search, PPTX output, OCR, dollar-budget reconciliation, PostgreSQL/multiple replicas, eBarimt/refunds/recurring debits and a comprehensive independent security/load audit. Resend account mail, QPay prepaid subscriptions, read-only Google/HubSpot OAuth and encrypted S3 backups are implemented; email/payment/OAuth require the owner’s provider credentials and activation tests. No inert controls pretend these integrations are connected. Keep critical HR, financial and legal actions under human review; approval only changes internal status and never sends or pays anything externally.
 
 ### Workforce visual update
 
@@ -109,3 +109,7 @@ Not yet implemented: email verification/recovery and SSO, billing/subscriptions,
 - Nine architecture themes now include distinct structural features, props, desk finishes and room layouts.
 - Shared activity model: active pipeline specialist, queued teammate, human review, configured readiness, missing AI connection and stale server connection. Polls every six seconds while visible; this is AI task activity, not human online presence or a provider health check.
 - WebGL-unavailable browsers get selectable illustrated employee cards instead of an empty canvas.
+
+## Service activation (0.4)
+
+See [docs/OPERATIONS.md](docs/OPERATIONS.md) for exact environment keys, OAuth redirects, QPay activation, backup restore and current boundaries. Provider-unconfigured controls explain what is missing; no demo payment or mock integration is exposed as a real connection.

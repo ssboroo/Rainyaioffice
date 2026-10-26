@@ -14,6 +14,14 @@ import OpenAI from "openai";
 import { importDocument, exportDocument } from "./lib/documents.mjs";
 import { seal, unseal, canStoreSecrets } from "./lib/secrets.mjs";
 import { createBackup } from "./lib/backups.mjs";
+import { accountMail, mailConfigured, digest } from "./lib/mail.mjs";
+import { billing } from "./lib/billing.mjs";
+import { integrations } from "./lib/integrations.mjs";
+import {
+  uploadOffsite,
+  backupState,
+  offsiteConfigured,
+} from "./lib/offsite.mjs";
 import { newSecret, verifyTotp } from "./lib/mfa.mjs";
 const root = dirname(fileURLToPath(import.meta.url));
 const production = process.env.NODE_ENV === "production";
@@ -268,7 +276,8 @@ function reserve(w) {
     w,
     day,
   ).calls;
-  const limit = Number(process.env.DAILY_AI_CALL_LIMIT || 30);
+  bill.requireActive(w);
+  const limit = bill.entitlement(w).limit;
   if (used >= limit) throw fail(429, "Өдрийн AI дуудлагын лимит хүрсэн");
   put("UPDATE usage SET calls=calls+1 WHERE workspace=? AND day=?", w, day);
 }
@@ -455,12 +464,15 @@ setInterval(() => {
   void pump();
 }, 1000).unref();
 if (process.env.DATABASE_BACKUPS === "true") {
-  let backingUp = false;
+  let backingUp = false,
+    snapshotTaken = false;
   const snapshot = async () => {
     if (backingUp) return;
     backingUp = true;
     try {
-      await createBackup(db, dbPath);
+      const file = await createBackup(db, dbPath, { refresh: !snapshotTaken });
+      snapshotTaken = true;
+      await uploadOffsite(file);
       console.log("Daily SQLite backup verified");
     } catch {
       console.error("Daily SQLite backup failed");
@@ -485,6 +497,8 @@ setInterval(() => {
   for (const [k, v] of attempts) if (v.until < Date.now()) attempts.delete(k);
   put("DELETE FROM sessions WHERE expires<?", Date.now());
   put("DELETE FROM invites WHERE expires<?", Date.now());
+  put("DELETE FROM account_tokens WHERE expires<?", Date.now());
+  put("DELETE FROM oauth_states WHERE expires<?", Date.now());
 }, 60000).unref();
 async function body(req) {
   let s = "";
@@ -547,6 +561,9 @@ function admin(m) {
   if (!["owner", "admin"].includes(m.role))
     throw fail(403, "Админы эрх шаардлагатай");
 }
+const mailer = accountMail(db, { password, throttle });
+const bill = billing(db);
+const connected = integrations(db);
 const staticFiles = {
   "/workspace.css": ["workspace.css", "text/css; charset=utf-8"],
   "/workforce.js": ["workforce.js", "text/javascript; charset=utf-8"],
@@ -612,6 +629,41 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache" });
       return res.end(readFileSync(resolve(root, "public", f)));
     }
+    const paymentCallback = path.match(
+      /^\/api\/billing\/qpay\/callback\/([a-f0-9-]{36})\/([A-Za-z0-9_-]{43})$/,
+    );
+    if (paymentCallback && ["GET", "POST"].includes(req.method)) {
+      throttle("qpay-callback:" + paymentCallback[1], 30);
+      return send(await bill.callback(paymentCallback[1], paymentCallback[2]));
+    }
+    const oauthCallback = path.match(
+      /^\/api\/integrations\/callback\/(gmail|calendar|hubspot)$/,
+    );
+    if (oauthCallback && req.method === "GET") {
+      const cookie =
+        req.headers.cookie?.match(/(?:^|; )rainy_oauth=([^;]+)/)?.[1] || "";
+      try {
+        await connected.finish(
+          oauthCallback[1],
+          Object.fromEntries(url.searchParams),
+          cookie,
+        );
+        res.writeHead(303, {
+          Location: "/#integration=connected",
+          "Set-Cookie":
+            "rainy_oauth=; HttpOnly; SameSite=Lax; Path=/api/integrations/callback; Max-Age=0" +
+            (production ? "; Secure" : ""),
+          "Cache-Control": "no-store",
+        });
+        return res.end();
+      } catch (e) {
+        res.writeHead(303, {
+          Location: "/#integration=failed",
+          "Cache-Control": "no-store",
+        });
+        return res.end();
+      }
+    }
     if (!path.startsWith("/api/")) throw fail(404, "Олдсонгүй");
     if (!["GET", "HEAD"].includes(req.method)) {
       const expected = origin || `http://${req.headers.host}`;
@@ -619,6 +671,10 @@ const server = http.createServer(async (req, res) => {
       if (!(req.headers["content-type"] || "").startsWith("application/json"))
         throw fail(415, "application/json шаардлагатай");
     }
+    if (
+      ["/api/auth/forgot", "/api/auth/reset", "/api/auth/verify"].includes(path)
+    )
+      return send(await mailer.publicRoute(path, req, await body(req)));
     if (
       req.method === "POST" &&
       ["/api/register", "/api/login"].includes(path)
@@ -671,7 +727,13 @@ const server = http.createServer(async (req, res) => {
         wid = randomUUID();
       db.exec("BEGIN");
       try {
-        put("INSERT INTO users VALUES(?,?,?,?)", uid, email, name, pass);
+        put(
+          "INSERT INTO users(id,email,name,password) VALUES(?,?,?,?)",
+          uid,
+          email,
+          name,
+          pass,
+        );
         put("INSERT INTO workspaces VALUES(?,?)", wid, workspace);
         put("INSERT INTO members VALUES(?,?,?)", wid, uid, "owner");
         seed(wid);
@@ -682,12 +744,19 @@ const server = http.createServer(async (req, res) => {
         throw e;
       }
       login(res, uid);
-      return send({ ok: true }, 201);
+      let verificationSent = false;
+      if (mailConfigured())
+        try {
+          await mailer.issue({ id: uid, email }, "verify");
+          verificationSent = true;
+        } catch {}
+      return send({ ok: true, verificationSent }, 201);
     }
     const u = auth(req);
     if (path === "/api/me" && req.method === "GET")
       return send({
-        user: u,
+        user: { ...u, emailVerified: mailer.verified(u) },
+        mailConfigured: mailConfigured(),
         workspaces: all(
           "SELECT w.*,m.role FROM workspaces w JOIN members m ON w.id=m.workspace WHERE m.user=?",
           u.id,
@@ -696,6 +765,11 @@ const server = http.createServer(async (req, res) => {
         mfaEnabled: !!q("SELECT secret FROM user_mfa WHERE user=?", u.id)
           ?.secret,
       });
+    if (path === "/api/account/verify/send" && req.method === "POST") {
+      throttle("verify:" + u.id, 3);
+      if (!mailer.verified(u)) await mailer.issue(u, "verify");
+      return send({ ok: true });
+    }
     if (path === "/api/logout" && req.method === "POST") {
       const token =
         req.headers.cookie?.match(/(?:^|; )rainy_session=([^;]+)/)?.[1] || "";
@@ -825,6 +899,93 @@ const server = http.createServer(async (req, res) => {
     }
     const m = scope(req, u),
       w = m.workspace;
+    const servicePath = path.match(/^\/api\/services(?:\/(.*))?$/);
+    if (servicePath) {
+      const route = servicePath[1] || "";
+      if (req.method === "GET" && !route)
+        return send({
+          mail: {
+            configured: mailConfigured(),
+            verified: mailer.verified(u),
+            required: process.env.EMAIL_VERIFICATION_REQUIRED === "true",
+          },
+          billing: ["owner", "admin"].includes(m.role)
+            ? bill.status(w)
+            : { configured: false, plans: [], orders: [], subscription: null },
+          integrations: connected.status(u.id, w),
+          backup: {
+            configured: offsiteConfigured(),
+            lastSuccess: backupState.lastSuccess,
+            error: backupState.error,
+          },
+        });
+      const data = req.method === "GET" ? {} : await body(req);
+      if (route === "billing/orders" && req.method === "POST") {
+        admin(m);
+        mailer.requireVerified(u);
+        throttle("invoice:" + w, 5);
+        const result = await bill.create(w, data.plan);
+        audit(w, u, "QPay нэхэмжлэх үүсгэсэн", result.id);
+        return send(result, 201);
+      }
+      const orderRoute = route.match(/^billing\/orders\/([a-f0-9-]{36})$/);
+      if (orderRoute && req.method === "GET") {
+        admin(m);
+        return send(bill.order(w, orderRoute[1]));
+      }
+      const integrationRoute = route.match(
+        /^integrations\/(gmail|calendar|hubspot)\/(start|sync|items|disconnect|import)$/,
+      );
+      if (integrationRoute) {
+        const [, provider, action] = integrationRoute;
+        edit(m);
+        mailer.requireVerified(u);
+        if (action === "start" && req.method === "POST") {
+          throttle("oauth:" + u.id, 10);
+          const session = hash(
+            req.headers.cookie?.match(/(?:^|; )rainy_session=([^;]+)/)?.[1] ||
+              "",
+          );
+          const result = connected.start(u.id, w, provider, session);
+          res.setHeader(
+            "Set-Cookie",
+            `rainy_oauth=${digest(result.state)}; HttpOnly; SameSite=Lax; Path=/api/integrations/callback; Max-Age=600${production ? "; Secure" : ""}`,
+          );
+          return send({ url: result.url });
+        }
+        if (action === "sync" && req.method === "POST") {
+          throttle("sync:" + w + ":" + u.id + ":" + provider, 5);
+          return send(await connected.sync(u.id, w, provider));
+        }
+        if (action === "items" && req.method === "GET")
+          return send({ items: connected.items(u.id, w, provider) });
+        if (action === "disconnect" && req.method === "POST")
+          return send(await connected.disconnect(u.id, w, provider));
+        if (action === "import" && req.method === "POST") {
+          const item = connected
+            .items(u.id, w, provider)
+            .find((i) => i.item === data.item);
+          if (!item) throw fail(404, "Өгөгдөл олдсонгүй");
+          const room = get(w, "room", data.roomId);
+          requireRoom(m, data.roomId);
+          if (!room?.private)
+            throw fail(
+              400,
+              "Хувийн өрөө сонгоно уу. Импортын өгөгдөл owner/admin болон өрөөний эрхтэй хүмүүст харагдана.",
+            );
+          const doc = record(w, "document", {
+            title: item.title,
+            content: item.content,
+            roomId: room.id,
+            version: 1,
+            source: { provider, item: item.item, importedBy: u.id },
+          });
+          audit(w, u, "Интеграцийн өгөгдөл импортлосон", provider);
+          return send(doc, 201);
+        }
+      }
+      throw fail(404, "Олдсонгүй");
+    }
     if (path === "/api/state" && req.method === "GET") {
       const tasks = list(w, "task").filter((t) => visibleRoom(m, t.roomId));
       const taskIds = new Set(tasks.map((t) => t.id));
@@ -878,7 +1039,7 @@ const server = http.createServer(async (req, res) => {
             w,
             now().slice(0, 10),
           )?.calls || 0,
-        limit: Number(process.env.DAILY_AI_CALL_LIMIT || 30),
+        limit: bill.entitlement(w).limit,
       });
     }
 
@@ -933,6 +1094,7 @@ const server = http.createServer(async (req, res) => {
     const b = req.method === "GET" ? {} : await body(req);
     if (path === "/api/invites" && req.method === "POST") {
       admin(m);
+      mailer.requireVerified(u);
       if (!["admin", "member", "viewer"].includes(b.role))
         throw fail(400, "Эрх буруу");
       const email = required(b.email, "Урих хүний и-мэйл", 254).toLowerCase();
@@ -1032,6 +1194,7 @@ const server = http.createServer(async (req, res) => {
       const p = password(b.newPassword);
       put("UPDATE users SET password=? WHERE id=?", p, u.id);
       put("DELETE FROM sessions WHERE user=?", u.id);
+      put("DELETE FROM account_tokens WHERE user=?", u.id);
       login(res, u.id);
       audit(w, u, "Нууц үг шинэчилсэн, бусад session хүчингүй болгосон");
       return send({ ok: true });
@@ -1311,6 +1474,8 @@ const server = http.createServer(async (req, res) => {
         return send({ ok: true });
       }
       if (action === "run") {
+        mailer.requireVerified(u);
+        bill.requireActive(w);
         if (!aiSettings(w).configured)
           throw fail(503, "AI холболтыг Workspace тохиргоонд нэмнэ үү");
         if (

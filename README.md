@@ -6,6 +6,8 @@
 
 Live: https://rainy-ai-office-production.up.railway.app
 
+Read-only demo: https://rainy-ai-office-production.up.railway.app/#demo — clearly labelled sample data, no login, no provider calls or organization writes.
+
 ## Product surface
 
 - Organization sidebar, dashboard with real task counts, room navigation, kanban/list task board, command search (`Ctrl/Cmd K`), notifications, team inspector, knowledge library and workflow catalog.

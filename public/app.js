@@ -12,6 +12,8 @@ import { mountOffice } from "/office3d.js";
 const $ = (s) => document.querySelector(s),
   app = $("#app"),
   modal = $("#modal");
+let isDemo = false;
+const previousWorkspace = localStorage.getItem("rainy-workspace");
 const colors = {
   coral: "#ea9a7c",
   blue: "#7d9be8",
@@ -97,6 +99,10 @@ function toast(t) {
   window.toastTimer = setTimeout(() => (el.style.display = "none"), 5000);
 }
 async function api(path, method = "GET", data) {
+  if (isDemo && method !== "GET")
+    throw Error(
+      "Энэ бол зөвхөн үзэх демо. Бодит workspace үүсгэж үргэлжлүүлнэ үү.",
+    );
   const r = await fetch("/api/" + path, {
     method,
     headers: {
@@ -144,7 +150,8 @@ function renderAuth() {
     officeController = null;
     officeElement = null;
   }
-  app.innerHTML = `<div class="auth"><section class="auth-hero"><div class="wordmark">RAINY AI OFFICE<small>UNIVERSAL AI WORKFORCE</small></div><div><div class="eyebrow">EVERY TEAM. EVERY WORKFLOW.</div><h1>Таны дараагийн<br>багийн гишүүн.<br>AI ажилтан.</h1><p>Хүн болон AI нэг оффист. Ажлаа төлөвлөж, хуваарилж, хамтран гүйцэтгэх шинэ орчин.</p><div class="auth-sculpture">◈ ◈ ◈</div><div class="auth-features"><span>Бүх салбарт</span><span>Тусгаарлагдсан workspace</span><span>Хүний хяналт</span></div></div><small>RAINY · Хамтдаа илүү ихийг бүтээе.</small></section><section class="auth-content"><div class="auth-box"><div class="eyebrow">RAINY AI OFFICE</div><h2>${authMode === "login" ? "Эргээд тавтай морил" : "AI багаа байгуулъя"}</h2><p>${authMode === "login" ? "Таны хүмүүс, AI ажилтнууд, бүх ажил нэг дор." : "Байгууллага, бизнес, баг болон хувь хүнд зориулсан нэгдсэн ажлын орчин."}</p><form id="auth-form">${authMode === "register" ? field("name", "Таны нэр") + field("workspace", "Байгууллага / багийн нэр") : ""}${field("email", "И-мэйл", "email")}${field("password", "Нууц үг" + (authMode === "register" ? " · 12-оос дээш тэмдэгт" : ""), "password")}${authMode === "login" ? field("mfaCode", "2FA / recovery код · идэвхжүүлсэн бол", "text", "", false) : ""}<div class="error" role="alert"></div><button type="submit" class="btn primary">${authMode === "login" ? "Нэвтрэх →" : "Workspace үүсгэх →"}</button></form><div class="auth-switch"><button id="switch-auth" class="text-btn">${authMode === "login" ? "Шинэ workspace үүсгэх" : "Бүртгэлтэй юу? Нэвтрэх"}</button></div><p style="font-size:10px;margin-top:30px">AI-ийн үр дүн нь төсөл байна. Эцсийн шийдвэрийг эрх бүхий хүн баталгаажуулна.</p></div></section></div>`;
+  app.innerHTML = `<div class="auth"><section class="auth-hero"><div class="wordmark">RAINY AI OFFICE<small>UNIVERSAL AI WORKFORCE</small></div><div><div class="eyebrow">EVERY TEAM. EVERY WORKFLOW.</div><h1>Таны дараагийн<br>багийн гишүүн.<br>AI ажилтан.</h1><p>Хүн болон AI нэг оффист. Ажлаа төлөвлөж, хуваарилж, хамтран гүйцэтгэх шинэ орчин.</p><div class="auth-sculpture">◈ ◈ ◈</div><div class="auth-features"><span>Бүх салбарт</span><span>Тусгаарлагдсан workspace</span><span>Хүний хяналт</span></div></div><small>RAINY · Хамтдаа илүү ихийг бүтээе.</small></section><section class="auth-content"><div class="auth-box"><div class="eyebrow">RAINY AI OFFICE</div><h2>${authMode === "login" ? "Эргээд тавтай морил" : "AI багаа байгуулъя"}</h2><p>${authMode === "login" ? "Таны хүмүүс, AI ажилтнууд, бүх ажил нэг дор." : "Байгууллага, бизнес, баг болон хувь хүнд зориулсан нэгдсэн ажлын орчин."}</p><form id="auth-form">${authMode === "register" ? field("name", "Таны нэр") + field("workspace", "Байгууллага / багийн нэр") : ""}${field("email", "И-мэйл", "email")}${field("password", "Нууц үг" + (authMode === "register" ? " · 12-оос дээш тэмдэгт" : ""), "password")}${authMode === "login" ? field("mfaCode", "2FA / recovery код · идэвхжүүлсэн бол", "text", "", false) : ""}<div class="error" role="alert"></div><button type="submit" class="btn primary">${authMode === "login" ? "Нэвтрэх →" : "Workspace үүсгэх →"}</button></form><div class="auth-demo"><button class="btn" id="open-demo">3D демо workspace үзэх ↗</button><small>Бүртгэлгүй · Зөвхөн үзэх</small></div><div class="auth-switch"><button id="switch-auth" class="text-btn">${authMode === "login" ? "Шинэ workspace үүсгэх" : "Бүртгэлтэй юу? Нэвтрэх"}</button></div><p style="font-size:10px;margin-top:30px">AI-ийн үр дүн нь төсөл байна. Эцсийн шийдвэрийг эрх бүхий хүн баталгаажуулна.</p></div></section></div>`;
+  if ($("#open-demo")) $("#open-demo").onclick = () => openDemo();
   $("#switch-auth").onclick = () => {
     authMode = authMode === "login" ? "register" : "login";
     renderAuth();
@@ -170,6 +177,10 @@ async function boot() {
   }
 }
 async function refresh(render = true) {
+  if (isDemo) {
+    if (render) renderApp();
+    return;
+  }
   state = await api("state");
   if (!state.rooms.some((r) => r.id === room)) room = state.rooms[0]?.id;
   if (!state.agents.some((a) => a.id === selectedAgent))
@@ -199,6 +210,8 @@ function renderApp() {
   if (view === "office") syncOffice();
 }
 function renderPage() {
+  if (isDemo && view === "settings")
+    return `<div class="empty-state"><span>✦</span><h3>Таны дараагийн AI workspace</h3><p>Энэ бол жишээ өгөгдөлтэй, зөвхөн үзэх демо орчин.<br>Өөрийн баг, даалгавар, баримтаа нэмэхийн тулд workspace үүсгэнэ үү.</p><button class="btn primary" data-exitdemo>Workspace үүсгэх →</button></div>`;
   if (view === "overview") return overview({ me, state });
   if (view === "office") return officeView();
   if (view === "agents") return agentsView();
@@ -784,6 +797,18 @@ function openDocument(id) {
   };
 }
 function bindExtras() {
+  if (isDemo) {
+    const exit = () => {
+      isDemo = false;
+      me = null;
+      workspace = previousWorkspace;
+      window.history.replaceState(null, "", window.location.pathname);
+      authMode = "register";
+      renderAuth();
+    };
+    if ($("#logout")) $("#logout").onclick = exit;
+    app.querySelectorAll("[data-exitdemo]").forEach((b) => (b.onclick = exit));
+  }
   const role = me.workspaces.find((w) => w.id === workspace)?.role;
   const blocked =
     role === "viewer"
@@ -1076,7 +1101,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 const pollTimer = setInterval(async () => {
-  if (!me || busy || document.hidden) return;
+  if (!me || busy || document.hidden || isDemo) return;
   busy = true;
   try {
     const currentTask = modal.dataset.taskId;
@@ -1100,9 +1125,80 @@ const pollTimer = setInterval(async () => {
     busy = false;
   }
 }, 6000);
-await boot();
+if (window.location.hash === "#demo") openDemo();
+else await boot();
 
 export function disposeApp() {
   clearInterval(pollTimer);
   officeController?.destroy();
+}
+
+function openDemo() {
+  isDemo = true;
+  workspace = "demo";
+  view = "office";
+  me = {
+    user: { id: "demo-user", name: "RAINY Demo", email: "" },
+    workspaces: [{ id: "demo", name: "Демо · Зөвхөн үзэх", role: "viewer" }],
+  };
+  const agents = [
+    [
+      "a1",
+      "Project Manager",
+      "Ажлыг төлөвлөж, AI багийн дарааллыг зохион байгуулна.",
+      "blue",
+    ],
+    [
+      "a2",
+      "Researcher",
+      "Эх сурвалжид тулгуурласан судалгааны төсөл бэлдэнэ.",
+      "purple",
+    ],
+    [
+      "a3",
+      "Document Specialist",
+      "Тайлан, баримт бичгийн төсөл боловсруулна.",
+      "orange",
+    ],
+    [
+      "a4",
+      "Quality Reviewer",
+      "Үр дүн, шаардлага, эх сурвалжийг хянана.",
+      "teal",
+    ],
+  ].map(([id, name, description, color]) => ({
+    id,
+    name,
+    description,
+    color,
+    instructions: "Демо ажилтан",
+  }));
+  state = {
+    agents,
+    rooms: [
+      { id: "demo-general", name: "Үндсэн оффис", type: "general" },
+      { id: "demo-research", name: "Судалгааны студи", type: "research" },
+      { id: "demo-dev", name: "IT лаборатори", type: "development" },
+      { id: "demo-finance", name: "Санхүүгийн төв", type: "finance" },
+      { id: "demo-education", name: "Сургалтын танхим", type: "education" },
+    ],
+    tasks: [],
+    outputs: [],
+    documents: [],
+    documentVersions: [],
+    comments: [],
+    templates: [],
+    notifications: [],
+    workflows: [],
+    audit: [],
+    jobs: [],
+    members: [{ id: "demo-user", name: "Демо хэрэглэгч", role: "viewer" }],
+    usage: 0,
+    limit: 30,
+    ai: { configured: false, canStoreSecrets: false },
+  };
+  room = "demo-general";
+  selectedAgent = "a1";
+  window.history.replaceState(null, "", window.location.pathname + "#demo");
+  renderApp();
 }

@@ -3189,3 +3189,25 @@ dialog::backdrop {
     font-size: 8px;
   }
 }
+.auth-demo {
+  margin-top: 22px;
+  text-align: center;
+  padding-top: 20px;
+  border-top: 1px solid #dae5ce;
+}
+.auth-demo .btn {
+  width: 100%;
+  background: #edf5e2;
+  border-color: #d7e5c4;
+  color: #5b7b40;
+  font-size: 12px;
+}
+.auth-demo small {
+  display: block;
+  font-size: 9px;
+  color: #7d9567;
+  margin-top: 10px;
+}
+.connection-pill {
+  font-size: 9px;
+}

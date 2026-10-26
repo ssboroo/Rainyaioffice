@@ -3211,3 +3211,278 @@ dialog::backdrop {
 .connection-pill {
   font-size: 9px;
 }
+
+/* Workforce identity and activity: one shared status language in every surface. */
+.presence-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 12px 2px 4px;
+  font-size: 11px;
+  color: #526456;
+}
+.presence-summary > span,
+.presence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.presence-summary i,
+.presence-badge i {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--presence);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--presence) 13%, transparent);
+}
+.presence-badge {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--presence);
+  font-weight: 650;
+}
+.presence-detail {
+  border: 1px solid #dce4d8;
+  background: #f0f4ed;
+  border-radius: 12px;
+  padding: 13px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.presence-detail strong {
+  font-size: 12px;
+}
+.presence-detail p {
+  margin: 5px 0 8px;
+  color: #586b60;
+}
+.presence-detail small {
+  display: block;
+  margin-top: 8px;
+  color: #6a786c;
+  font-size: 10px;
+}
+.agent-portrait.illustrated-portrait {
+  min-height: 220px;
+  background: radial-gradient(ellipse at 50% 30%, #fff8e9 0%, #e8eee1 70%);
+  overflow: hidden;
+  isolation: isolate;
+}
+.illustrated-portrait .employee-avatar-art {
+  position: relative;
+  display: block;
+  margin: 0 auto;
+  width: min(90%, 230px);
+  height: 240px;
+  z-index: 1;
+  filter: drop-shadow(0 9px 5px #28433815);
+}
+.illustrated-portrait .portrait-orbit {
+  z-index: 0;
+  border-color: #becdaa;
+  transform: rotate(-28deg);
+}
+.portrait-presence {
+  position: absolute;
+  right: 16px;
+  bottom: 15px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--presence);
+  color: white;
+  border: 3px solid #f8faf3;
+  z-index: 2;
+  font-size: 15px;
+}
+.illustrated-small {
+  overflow: hidden;
+  background: #eff2e7 !important;
+  width: 64px !important;
+  height: 72px !important;
+  border-radius: 15px !important;
+}
+.illustrated-small svg {
+  width: 64px;
+  height: 72px;
+}
+.workforce-chips .detailed-employee-chip {
+  padding: 8px 12px 8px 6px;
+  gap: 9px;
+  min-height: 62px;
+  background: #fafbf7;
+  white-space: normal;
+  text-align: left;
+}
+.detailed-employee-chip > .chip-portrait {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: #e8eee1;
+  border-radius: 12px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.chip-portrait svg {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+.chip-portrait i {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--presence);
+  border: 2px solid #fff;
+  right: -2px;
+  bottom: 0;
+}
+.detailed-employee-chip > .chip-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: auto;
+  height: auto;
+  background: none;
+  padding: 0;
+  gap: 4px;
+  border-radius: 0;
+}
+.chip-identity strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: #314c40;
+}
+.chip-identity small {
+  font-size: 10px;
+  color: var(--presence);
+  line-height: 1.35;
+}
+.worker-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 7px 10px;
+  border-radius: 10px !important;
+  border-left: 3px solid var(--presence) !important;
+  color: #344b40;
+  font-size: 10px;
+  min-width: 105px;
+  box-shadow: 0 5px 18px #213b3c14;
+}
+.worker-label strong {
+  font-size: 10px;
+  font-weight: 600;
+}
+.worker-label small {
+  color: var(--presence);
+  font-size: 9px;
+}
+.worker-label.selected small {
+  color: #e6eddc;
+}
+.worker-label[data-presence="working"] small:before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: presence-pulse 1.6s ease-in-out infinite;
+}
+@keyframes presence-pulse {
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+}
+.has-fallback-roster .webgl-message {
+  position: relative;
+  inset: auto;
+  margin: 16px 16px 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f8f5e7;
+  font-size: 11px;
+  line-height: 1.6;
+  height: auto;
+  min-height: 0;
+  display: block;
+}
+.has-fallback-roster .camera-tools {
+  display: none;
+}
+.fallback-roster {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 14px;
+  padding: 22px;
+  max-height: 440px;
+  overflow: auto;
+}
+.fallback-employee {
+  border: 1px solid #d4dfd0;
+  background: #f8faf3;
+  border-radius: 16px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 7px;
+  text-align: center;
+}
+.fallback-employee.selected {
+  border: 2px solid #5f8267;
+  background: #eaf1e2;
+}
+.fallback-employee svg {
+  width: 90px;
+  height: 105px;
+}
+.fallback-employee strong {
+  font-size: 11px;
+}
+.fallback-employee small {
+  font-size: 10px;
+  line-height: 1.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .worker-label[data-presence="working"] small:before {
+    animation: none;
+  }
+}
+@media (max-width: 700px) {
+  .presence-summary {
+    font-size: 10px;
+    gap: 10px;
+  }
+  .worker-label {
+    min-width: 85px;
+    padding: 5px 7px;
+  }
+  .worker-label strong {
+    font-size: 9px;
+  }
+  .worker-label small {
+    font-size: 8px;
+  }
+  .fallback-roster {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px;
+  }
+  .workforce-chips .detailed-employee-chip {
+    min-width: 170px;
+  }
+  .agent-portrait.illustrated-portrait {
+    min-height: 210px;
+  }
+}

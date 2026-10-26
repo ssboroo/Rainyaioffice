@@ -1,3 +1,4 @@
+import { identity, employeePresence, avatarSVG } from "./workforce.js";
 import * as THREE from "/vendor/three.module.js";
 import { OrbitControls } from "/vendor/OrbitControls.js";
 import { RoundedBoxGeometry } from "/vendor/RoundedBoxGeometry.js";
@@ -149,11 +150,47 @@ function chair(p, x, z) {
   }
   return g;
 }
-function desk(p, x, z, index) {
+function desk(p, x, z, index, type = "general") {
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   p.add(g);
-  box(g, 1.8, 0.13, 0.88, 0xf1eee5, 0, 1.04, -0.28);
+  box(
+    g,
+    1.8,
+    0.13,
+    0.88,
+    ["research", "government", "finance"].includes(type)
+      ? 0xb9906d
+      : type === "development"
+        ? 0x384b63
+        : 0xf1eee5,
+    0,
+    1.04,
+    -0.28,
+  );
+  if (type === "development") {
+    box(g, 0.55, 0.4, 0.06, 0x29374f, -0.67, 1.5, -0.5).rotation.y = 0.25;
+    box(g, 0.5, 0.34, 0.012, 0x81c7db, -0.65, 1.5, -0.46).rotation.y = 0.25;
+    box(g, 0.24, 0.45, 0.4, 0x29374f, -0.56, 0.35, -0.35);
+  }
+  if (["research", "education", "government"].includes(type)) {
+    for (let j = 0; j < 3; j++)
+      box(
+        g,
+        0.28,
+        0.045,
+        0.34,
+        [0x66847f, 0xd2b26e, 0x9b799a][j],
+        0.54,
+        1.14 + j * 0.05,
+        -0.5,
+      );
+  }
+  if (["finance", "hr", "operations"].includes(type)) {
+    box(g, 0.33, 0.03, 0.39, 0xeee7d6, -0.54, 1.14, -0.32);
+    for (let j = 0; j < 3; j++)
+      box(g, 0.19, 0.006, 0.012, 0x789a88, -0.54, 1.16, -0.42 + j * 0.065);
+  }
   box(g, 0.4, 0.88, 0.7, 0xd9ded5, 0.63, 0.52, -0.28);
   for (const xx of [-0.72, 0.65])
     box(g, 0.06, 0.95, 0.06, 0xbac8bd, xx, 0.5, -0.55);
@@ -192,10 +229,14 @@ function desk(p, x, z, index) {
   cylinder(g, 0.075, 0.062, 0.14, 0xe6b98a, -0.61, 1.18, -0.06);
   cylinder(g, 0.06, 0.06, 0.007, 0x6d5140, -0.61, 1.255, -0.06);
   chair(g, 0, 0.65);
+  g.userData.screen = screen;
   return g;
 }
 function employee(p, a, x, z, index) {
   const color = palette[a.color] || palette.blue;
+  const look = identity(a),
+    skin = Number(look.skin.replace("#", "0x")),
+    hair = Number(look.hair.replace("#", "0x"));
   const group = new THREE.Group();
   group.position.set(x, 0, z + 0.62);
   group.userData.agentId = a.id;
@@ -222,19 +263,89 @@ function employee(p, a, x, z, index) {
       [side * 0.08, -0.18, -0.15],
       [side * 0.08, -0.05, -0.4],
       0.046,
-      0xefc8a7,
+      skin,
     );
-    sphere(arm, 0.062, 0xefc8a7, side * 0.08, -0.05, -0.4);
+    sphere(arm, 0.062, skin, side * 0.08, -0.05, -0.4);
     arms.push(arm);
   }
-  cylinder(body, 0.06, 0.06, 0.1, 0xefc8a7, 0, 1.25, 0);
+  cylinder(body, 0.06, 0.06, 0.1, skin, 0, 1.25, 0);
   const head = new THREE.Group();
   head.position.y = 1.49;
   body.add(head);
-  sphere(head, 0.23, 0xf0d1b3, 0, 0, 0, 1, 1.08, 0.92);
-  sphere(head, 0.235, color, 0, 0.12, 0.02, 1.08, 0.72, 1);
-  sphere(head, 0.09, color, -0.17, 0.07, -0.08);
-  sphere(head, 0.065, color, 0.15, 0.15, -0.15);
+  sphere(head, 0.23, skin, 0, 0, 0, 1, 1.08, 0.92);
+  sphere(
+    head,
+    0.235,
+    hair,
+    0,
+    0.12,
+    0.02,
+    1.08,
+    look.style === 2 ? 0.45 : 0.72,
+    1,
+  );
+  if ([1, 3].includes(look.style)) {
+    sphere(head, 0.1, hair, -0.18, -0.02, 0.03, 0.65, 1.7, 1);
+    sphere(head, 0.1, hair, 0.18, -0.02, 0.03, 0.65, 1.7, 1);
+  }
+  if (look.style === 1) sphere(head, 0.12, hair, 0.04, 0.26, 0.07);
+  if (look.style === 4)
+    for (let j = 0; j < 5; j++)
+      sphere(
+        head,
+        0.09,
+        hair,
+        Math.sin(j * 1.6) * 0.15,
+        0.19,
+        Math.cos(j * 1.6) * 0.13,
+      );
+  if (look.glasses) {
+    for (const xx of [-0.085, 0.085]) {
+      const lens = mesh(
+        head,
+        new THREE.TorusGeometry(0.062, 0.009, 6, 20),
+        0x293d51,
+        xx,
+        0.016,
+        -0.217,
+      );
+      lens.name = "avatar-glasses";
+    }
+    limb(head, [-0.025, 0.02, -0.22], [0.025, 0.02, -0.22], 0.008, 0x293d51);
+  }
+  if (look.headset) {
+    for (const xx of [-0.24, 0.24])
+      sphere(head, 0.065, 0x334954, xx, 0, 0, 0.45, 1, 1);
+    limb(head, [0.24, 0, -0.02], [0.13, -0.11, -0.24], 0.014, 0x334954);
+    sphere(head, 0.027, 0x334954, 0.13, -0.11, -0.24);
+  }
+  // Tailored collar, lapels, badge and shirt buttons give each employee a readable silhouette.
+  for (const side of [-1, 1]) {
+    const collar = box(
+      body,
+      0.12,
+      0.14,
+      0.035,
+      0xfaf4e8,
+      side * 0.075,
+      1.12,
+      -0.153,
+    );
+    collar.rotation.z = side * 0.38;
+    sphere(head, 0.042, skin, side * 0.225, -0.01, 0, 0.5, 1, 0.8);
+  }
+  for (let j = 0; j < 3; j++)
+    sphere(body, 0.012, 0xfaf4e8, 0, 1.03 - j * 0.08, -0.147);
+  box(body, 0.07, 0.1, 0.018, 0xf4e4ae, -0.11, 0.98, -0.15);
+  const smile = mesh(
+    head,
+    new THREE.TorusGeometry(0.045, 0.006, 6, 16, Math.PI),
+    0x9b6856,
+    0,
+    -0.077,
+    -0.212,
+  );
+  smile.rotation.z = Math.PI;
   for (const xx of [-0.08, 0.08])
     sphere(head, 0.018, 0x414343, xx, 0.015, -0.205);
   sphere(head, 0.035, 0xe7b796, 0, -0.04, -0.215, 1, 0.8, 0.7);
@@ -263,6 +374,8 @@ function employee(p, a, x, z, index) {
     beacon,
     index,
     running: false,
+    look,
+    presence: "offline",
   };
 }
 
@@ -532,6 +645,197 @@ function themeDecor(room, type, width, depth, accent) {
   return g;
 }
 
+function architecture(room, type, width, depth, theme) {
+  const g = new THREE.Group();
+  g.name = "architecture-" + type;
+  room.add(g);
+  const back = -depth / 2 + 0.18,
+    left = -width / 2 + 0.2;
+  if (type === "development") {
+    for (let x = -width / 2 + 0.3; x < width / 2; x += 0.55)
+      box(g, 0.016, 2.5, 0.03, 0x607b9a, x, 1.28, back);
+    for (let z = -depth / 2 + 0.3; z < depth / 2; z += 0.6)
+      box(g, width - 0.2, 0.008, 0.012, 0x9db5cc, 0, 0.03, z);
+    box(g, width - 0.4, 0.07, 0.1, 0x6fcedb, 0, 2.62, back + 0.03);
+    for (let j = 0; j < 4; j++)
+      box(g, 0.09, 1.7, 0.09, 0x6fcedb, left + 0.08, 1.2, 0.4 + j * 0.16);
+  } else if (type === "research") {
+    const globe = new THREE.Group();
+    g.add(globe);
+    globe.position.set(width / 2 - 0.7, 0, depth / 2 - 0.85);
+    cylinder(globe, 0.36, 0.42, 0.18, 0x8c7562, 0, 0.1, 0);
+    cylinder(globe, 0.06, 0.09, 0.9, 0xb08e5f, 0, 0.58, 0);
+    sphere(globe, 0.43, 0x729e9d, 0, 1.25, 0);
+    for (let j = 0; j < 3; j++) {
+      const orbit = mesh(
+        globe,
+        new THREE.TorusGeometry(0.5, 0.012, 6, 48),
+        0xcba96b,
+        0,
+        1.25,
+        0,
+      );
+      orbit.rotation.set(j * 0.6, 0.4 + j * 0.7, 0.3);
+    }
+    for (let j = 0; j < 5; j++) {
+      box(
+        g,
+        0.65,
+        0.45,
+        0.035,
+        0xf7f0db,
+        -1.7 + j * 0.72,
+        1.7 + (j % 2) * 0.18,
+        back,
+      );
+      for (let k = 0; k < 3; k++)
+        box(
+          g,
+          0.42,
+          0.018,
+          0.02,
+          0x998e78,
+          -1.7 + j * 0.72,
+          1.78 + (j % 2) * 0.18 - k * 0.09,
+          back + 0.035,
+        );
+    }
+  } else if (type === "finance") {
+    box(g, 0.75, 1.7, 0.75, 0x526e67, left + 0.4, 0.86, 0.6);
+    box(g, 0.04, 1.4, 0.59, 0x92aaa0, left + 0.8, 0.86, 0.6);
+    const dial = cylinder(
+      g,
+      0.13,
+      0.13,
+      0.07,
+      0xccad72,
+      left + 0.85,
+      0.99,
+      0.6,
+    );
+    dial.rotation.z = Math.PI / 2;
+    for (let j = 0; j < 9; j++)
+      box(
+        g,
+        0.035,
+        2.55,
+        0.035,
+        0xc6ae78,
+        -width / 2 + 0.7 + j * 0.18,
+        1.3,
+        back,
+      );
+  } else if (type === "hr") {
+    const pod = new THREE.Group();
+    g.add(pod);
+    pod.position.set(width / 2 - 1.1, 0, depth / 2 - 1.1);
+    pod.scale.setScalar(0.75);
+    cylinder(pod, 1.15, 1.15, 0.025, 0xc4a8ac, 0, 0.025, 0);
+    cylinder(pod, 0.53, 0.53, 0.09, 0xf6e9dd, 0, 0.8, 0);
+    cylinder(pod, 0.06, 0.24, 0.72, 0xb39889, 0, 0.4, 0);
+    chair(pod, -0.65, 0.6);
+    chair(pod, 0.65, 0.6);
+    const arch = mesh(
+      g,
+      new THREE.TorusGeometry(0.85, 0.07, 8, 40, Math.PI),
+      0xc19cac,
+      left + 0.12,
+      1.3,
+      0.5,
+    );
+    arch.rotation.y = Math.PI / 2;
+    box(g, 0.08, 1.3, 0.12, 0xc19cac, left + 0.12, 0.65, -0.35);
+    box(g, 0.08, 1.3, 0.12, 0xc19cac, left + 0.12, 0.65, 1.35);
+  } else if (type === "sales") {
+    for (let j = 0; j < 3; j++) {
+      cylinder(
+        g,
+        0.28,
+        0.28,
+        0.65 + j * 0.18,
+        0xf5eee3,
+        left + 0.4,
+        0.33 + j * 0.09,
+        -0.7 + j * 0.85,
+      );
+      const product = box(
+        g,
+        0.25,
+        0.32,
+        0.23,
+        [0x9ba6cf, 0xd59c81, 0x8bbaa3][j],
+        left + 0.4,
+        0.85 + j * 0.18,
+        -0.7 + j * 0.85,
+      );
+      product.rotation.y = 0.35;
+    }
+    for (let j = 0; j < 4; j++) {
+      const arch = mesh(
+        g,
+        new THREE.TorusGeometry(0.45, 0.035, 8, 30, Math.PI),
+        0xd0a277,
+        -1.5 + j,
+        1.6,
+        back,
+      );
+      box(g, 0.03, 0.7, 0.04, 0xd0a277, -1.95 + j, 1.25, back);
+      box(g, 0.03, 0.7, 0.04, 0xd0a277, -1.05 + j, 1.25, back);
+    }
+  } else if (type === "education") {
+    box(g, width - 1, 0.15, 1.1, 0xb5c6a9, 0, 0.08, back + 0.6);
+    box(g, 0.65, 0.012, depth - 1.5, 0x94bca6, 0, 0.032, 0.5);
+    for (let j = 0; j < 5; j++)
+      box(
+        g,
+        0.05,
+        0.28,
+        0.2,
+        [0xd29b78, 0x8eabd1, 0xd5c37e][j % 3],
+        left + 0.05,
+        1.45,
+        -1 + j * 0.3,
+      );
+  } else if (type === "government") {
+    for (let j = 0; j < 4; j++) {
+      const x = -width / 2 + 0.45 + (j * (width - 0.9)) / 3;
+      cylinder(g, 0.1, 0.12, 2.4, 0xd6d1c5, x, 1.2, back + 0.08);
+      box(g, 0.33, 0.1, 0.3, 0xeae5d6, x, 2.43, back + 0.08);
+    }
+    box(g, width - 0.3, 0.12, 0.2, 0xc5b797, 0, 2.55, back);
+  } else if (type === "operations") {
+    for (let j = 0; j < 12; j++) {
+      const stripe = box(
+        g,
+        0.25,
+        0.012,
+        0.6,
+        j % 2 ? 0x46534e : 0xe9bd56,
+        -width / 2 + 0.25 + j * 0.29,
+        0.035,
+        depth / 2 - 0.4,
+      );
+      stripe.rotation.y = -0.25;
+    }
+    for (let j = 0; j < 4; j++) {
+      cylinder(
+        g,
+        0.045,
+        0.045,
+        2.45,
+        0x9eafb0,
+        left + 0.08,
+        1.23,
+        -depth / 2 + 0.4 + (j * (depth - 0.8)) / 3,
+      );
+    }
+  } else {
+    for (let j = 0; j < 12; j++)
+      box(g, 0.04, 2.35, 0.04, 0xb89c78, left + 0.04, 1.2, -1.8 + j * 0.19);
+  }
+  return g;
+}
+
 /** Scene construction is independent of the DOM and is validated by node tests. */
 export function buildOffice(agents, { type = "general" } = {}) {
   materialCache.clear();
@@ -539,7 +843,9 @@ export function buildOffice(agents, { type = "general" } = {}) {
   if (!environments[type]) type = "general";
   const theme = environments[type];
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xeef2e9);
+  scene.background = new THREE.Color(
+    type === "development" ? 0xdce6f1 : type === "sales" ? 0xf3e8dc : 0xeef2e9,
+  );
   const room = new THREE.Group();
   room.name = type;
   scene.userData.environment = type;
@@ -558,7 +864,16 @@ export function buildOffice(agents, { type = "general" } = {}) {
     [width, 0.13, 0, -depth / 2],
     [0.13, depth, -width / 2, 0],
   ]) {
-    const wall = box(room, w, 2.65, d, theme.wall, x, 1.31, z);
+    const wall = box(
+      room,
+      w,
+      2.65,
+      d,
+      type === "development" ? 0x52647d : theme.wall,
+      x,
+      1.31,
+      z,
+    );
     wall.material = wall.material.clone();
     wall.material.transparent = true;
     walls.push(wall);
@@ -641,6 +956,7 @@ export function buildOffice(agents, { type = "general" } = {}) {
     );
   }
   themeDecor(room, type, width, depth, theme.accent);
+  architecture(room, type, width, depth, theme);
   plant(room, -width / 2 + 0.5, -depth / 2 + 0.55, 1.2);
   plant(room, width / 2 - 0.48, depth / 2 - 0.45, 1.15);
   plant(room, -width / 2 + 0.5, depth / 2 - 0.5, 0.95);
@@ -660,10 +976,25 @@ export function buildOffice(agents, { type = "general" } = {}) {
     bulb.material = new THREE.MeshBasicMaterial({ color: 0xffebbf });
   }
   const workers = agents.map((a, i) => {
-    const x = ((i % columns) - (columns - 1) / 2) * 2.35,
-      z = (Math.floor(i / columns) - (rows - 1) / 2) * 2.5 - 0.35;
-    desk(room, x, z, i);
-    return employee(room, a, x, z, i);
+    const row = Math.floor(i / columns),
+      col = i % columns;
+    const spacing =
+      type === "finance" ? 2.5 : type === "development" ? 2.15 : 2.35;
+    const x =
+        (col - (columns - 1) / 2) * spacing +
+        (["research", "sales"].includes(type) ? (row % 2 ? 0.18 : -0.18) : 0),
+      z =
+        (row - (rows - 1) / 2) * 2.5 -
+        0.35 +
+        (type === "hr"
+          ? Math.abs(col - (columns - 1) / 2) * 0.25
+          : type === "government"
+            ? 0.18
+            : 0);
+    const station = desk(room, x, z, i, type);
+    const worker = employee(room, a, x, z, i);
+    worker.monitor = station.userData.screen;
+    return worker;
   });
   const ambient = new THREE.HemisphereLight(0xffffff, 0xb9c7b5, 2.6);
   scene.add(ambient);
@@ -715,7 +1046,17 @@ export function disposeScene(scene) {
 
 export function mountOffice(
   host,
-  { agents, selected, tasks, onSelect, viewState, onView, type = "general" },
+  {
+    agents,
+    selected,
+    tasks,
+    ai = {},
+    connection = {},
+    onSelect,
+    viewState,
+    onView,
+    type = "general",
+  },
 ) {
   let destroyed = false,
     contextLost = false,
@@ -745,7 +1086,45 @@ export function mountOffice(
     failure(
       "WebGL 2 идэвхгүй байна. Browser-ийн hardware acceleration тохиргоогоо шалгана уу. Доорх жагсаалтаас AI ажилтнаа сонгож ажлаа үргэлжлүүлэх боломжтой.",
     );
-    return { update() {}, destroy() {} };
+    const roster = document.createElement("div");
+    roster.className = "fallback-roster";
+    host.append(roster);
+    const updateFallback = ({
+      selected,
+      tasks = [],
+      ai = {},
+      connection = {},
+    }) => {
+      roster.replaceChildren();
+      for (const agent of agents) {
+        const p = employeePresence(agent, tasks, ai, connection);
+        const button = document.createElement("button");
+        button.className =
+          "fallback-employee" + (agent.id === selected ? " selected" : "");
+        button.setAttribute("aria-pressed", String(agent.id === selected));
+        button.innerHTML = avatarSVG(
+          agent,
+          "#" + (palette[agent.color] || palette.blue).toString(16),
+        );
+        const name = document.createElement("strong");
+        name.textContent = agent.name;
+        const badge = document.createElement("small");
+        badge.textContent = p.symbol + " " + p.label;
+        badge.style.color = p.color;
+        button.append(name, badge);
+        button.onclick = () => onSelect(agent.id);
+        roster.append(button);
+      }
+    };
+    updateFallback({ selected, tasks, ai, connection });
+    host.classList.add("has-fallback-roster");
+    return {
+      update: updateFallback,
+      destroy() {
+        roster.remove();
+        host.classList.remove("has-fallback-roster");
+      },
+    };
   }
   host.dataset.renderer = "webgl2";
   renderer.setPixelRatio(
@@ -754,7 +1133,7 @@ export function mountOffice(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.18;
+  renderer.toneMappingExposure = 0.97;
   const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
   const radius = Math.max(width, depth);
   camera.position.set(radius * 1.05, radius * 0.95, radius * 1.2);
@@ -915,20 +1294,44 @@ export function mountOffice(
     visible = entries[0].isIntersecting;
   });
   visibility.observe(host);
-  function update({ selected, tasks = [] }) {
+  function update({ selected, tasks = [], ai = {}, connection = {} }) {
     currentSelected = selected;
     for (const [i, w] of workers.entries()) {
-      w.running = tasks.some(
-        (t) =>
-          (t.agentIds || [t.agentId]).includes(w.id) && t.status === "running",
-      );
+      const p = employeePresence(agents[i], tasks, ai, connection);
+      w.running = p.kind === "working";
+      w.presence = p.kind;
       w.ring.visible = w.id === selected;
-      w.beacon.material.color.set(w.running ? 0x4f88e4 : 0x6ca784);
+      w.beacon.material.color.set(p.color);
+      w.monitor.material.color.set(
+        p.kind === "offline" || p.kind === "stale"
+          ? 0x77838b
+          : w.running
+            ? 0x8cbddd
+            : 0xb9d6cf,
+      );
+      w.monitor.material.emissiveIntensity = w.running
+        ? 0.45
+        : p.kind === "offline"
+          ? 0.02
+          : 0.16;
+      buttons[i].replaceChildren();
+      const name = document.createElement("strong");
+      name.textContent = agents[i].name;
+      const badge = document.createElement("small");
+      badge.textContent = p.symbol + " " + p.label;
+      buttons[i].append(name, badge);
+      buttons[i].dataset.presence = p.kind;
+      buttons[i].style.setProperty("--presence", p.color);
+      buttons[i].title = p.detail;
+      buttons[i].setAttribute(
+        "aria-label",
+        agents[i].name + " · " + p.label + " · сонгох",
+      );
       buttons[i].classList.toggle("selected", w.id === selected);
       buttons[i].setAttribute("aria-pressed", String(w.id === selected));
     }
   }
-  update({ selected, tasks });
+  update({ selected, tasks, ai, connection });
   function animate() {
     if (destroyed) return;
     frame = requestAnimationFrame(animate);
@@ -940,7 +1343,10 @@ export function mountOffice(
     walls[1].material.opacity = camera.position.x < 0 ? 0.08 : 1;
     for (const [i, w] of workers.entries()) {
       if (!reduce.matches) {
-        w.head.rotation.y = Math.sin(time * 0.65 + i) * 0.07;
+        w.head.rotation.y = Math.sin(time * (w.running ? 1.1 : 0.4) + i) * 0.09;
+        w.head.rotation.x =
+          w.presence === "offline" ? 0.14 : w.running ? 0.07 : -0.04;
+        w.beacon.scale.setScalar(w.running ? 1 + Math.sin(time * 4) * 0.2 : 1);
         w.body.position.y = Math.sin(time * 1.3 + i) * 0.009;
         w.arms.forEach(
           (arm, j) =>

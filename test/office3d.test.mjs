@@ -7,6 +7,10 @@ const source = readFileSync(
   "utf8",
 )
   .replace(
+    /["']\.\/workforce.js["']/,
+    JSON.stringify(new URL("../public/workforce.js", import.meta.url).href),
+  )
+  .replace(
     /["']\/vendor\/three.module.js["']/,
     JSON.stringify(import.meta.resolve("three")),
   )
@@ -108,4 +112,22 @@ test("all nine room types construct distinct 3D environments", () => {
     counts.size >= 7,
     "environment furniture must differ, not only colors",
   );
+});
+test("avatars have stable facial features and room architecture differs structurally", () => {
+  const team = [
+    { id: "researcher", name: "Researcher", role: "research", color: "purple" },
+    { id: "assistant", name: "Assistant", role: "assistant", color: "coral" },
+  ];
+  const office = buildOffice(team, { type: "development" });
+  assert.ok(office.scene.getObjectByName("architecture-development"));
+  assert.ok(office.workers[0].body.getObjectByName("avatar-glasses"));
+  assert.equal(office.workers[1].look.headset, true);
+  const layout = office.workers.map((w) => w.group.position.toArray());
+  disposeScene(office.scene);
+  const finance = buildOffice(team, { type: "finance" });
+  assert.notDeepEqual(
+    finance.workers.map((w) => w.group.position.toArray()),
+    layout,
+  );
+  disposeScene(finance.scene);
 });

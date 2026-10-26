@@ -343,7 +343,11 @@ async function runTask(w, u, id) {
         : [["draft", employee]];
     for (const [stage, a] of stages) {
       if (get(w, "task", id).status === "cancelling") throw Error("Cancelled");
-      update(w, "task", id, { stage });
+      update(w, "task", id, {
+        stage,
+        activeAgentId: a.id || null,
+        activeAgentRole: a.role || null,
+      });
       audit(w, u, "AI шат эхэлсэн", stage + ": " + t.title);
       const result = await agentTurn(w, t, a, context, stage);
       if (get(w, "task", id).status === "cancelling") throw Error("Cancelled");
@@ -545,6 +549,7 @@ function admin(m) {
 }
 const staticFiles = {
   "/workspace.css": ["workspace.css", "text/css; charset=utf-8"],
+  "/workforce.js": ["workforce.js", "text/javascript; charset=utf-8"],
   "/views.js": ["views.js", "text/javascript; charset=utf-8"],
   "/office3d.js": ["office3d.js", "text/javascript; charset=utf-8"],
   "/": ["index.html", "text/html; charset=utf-8"],

@@ -50,6 +50,7 @@ try {
     "style.css",
     "office3d.js",
     "views.js",
+    "workforce.js",
     "workspace.css",
   ])
     await cp(resolve(root, "public", f), resolve(stage, "public", f));
@@ -77,6 +78,7 @@ try {
     "public/app.js",
     "public/office3d.js",
     "public/views.js",
+    "public/workforce.js",
     "public/workspace.css",
     "lib/documents.mjs",
     "lib/file-worker.mjs",

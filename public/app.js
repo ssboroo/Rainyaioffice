@@ -7,6 +7,8 @@ import {
   workflows as workflowScreen,
   industryPacks,
   icon,
+  employeePresence,
+  avatarSVG,
 } from "./views.js";
 import { mountOffice } from "/office3d.js";
 const $ = (s) => document.querySelector(s),
@@ -182,6 +184,7 @@ async function refresh(render = true) {
     return;
   }
   state = await api("state");
+  state.connection = { stale: false };
   if (!state.rooms.some((r) => r.id === room)) room = state.rooms[0]?.id;
   if (!state.agents.some((a) => a.id === selectedAgent))
     selectedAgent = state.agents[0]?.id;
@@ -244,7 +247,9 @@ function syncOffice() {
     target.replaceWith(officeElement);
     officeController.update({
       selected: selectedAgent,
-      tasks: state.tasks.filter((t) => t.roomId === room),
+      tasks: state.tasks,
+      ai: state.ai,
+      connection: state.connection,
     });
     return;
   }
@@ -255,7 +260,9 @@ function syncOffice() {
     type,
     agents: state.agents,
     selected: selectedAgent,
-    tasks: state.tasks.filter((t) => t.roomId === room),
+    tasks: state.tasks,
+    ai: state.ai,
+    connection: state.connection,
     viewState: cameraViews.get(key),
     onView: (v) => cameraViews.set(key, v),
     onSelect: (id) => {
@@ -268,7 +275,22 @@ function officeView() {
   return officeScreen({ state, room, selectedAgent, scene, roomTypes, colors });
 }
 function agentsView() {
-  return `<div class="pagehead"><div><h2>Таны AI баг</h2><p class="title-meta">Салбараас үл хамаарах мэргэжилтнүүд</p></div><button class="btn primary" data-newagent>＋ AI ажилтан</button></div><div class="grid">${state.agents.map((a) => `<article class="card"><div class="card-top"><div class="agent-avatar" style="background:${colors[a.color]}55">✦</div><span class="tag">${a.role === "custom" ? "CUSTOM" : "AI EMPLOYEE"}</span></div><h3>${esc(a.name)}</h3><p>${esc(a.description)}</p><div class="flex"><button class="btn" data-agenttask="${a.id}">Ажил даалгах ↗</button><button class="btn" data-editagent="${a.id}" aria-label="AI ажилтан засах">⚙</button></div></article>`).join("")}</div><div class="pagehead" style="margin-top:35px"><h2>AI ажилтны универсал сан</h2></div><div class="grid">${state.templates.map((a, i) => `<article class="card"><div class="agent-avatar" style="background:${colors[a.color]}55">✧</div><h3>${esc(a.name)}</h3><p>${esc(a.description)}</p><button class="btn" data-template="${i}">＋ Багт нэмэх</button></article>`).join("")}</div>`;
+  return `<div class="pagehead"><div><h2>Таны AI баг</h2><p class="title-meta">Салбараас үл хамаарах мэргэжилтнүүд</p></div><button class="btn primary" data-newagent>＋ AI ажилтан</button></div><div class="grid">${state.agents
+    .map(
+      (a) =>
+        `<article class="card"><div class="card-top"><div class="agent-avatar illustrated-small">${avatarSVG(a, colors[a.color])}</div><span class="tag">${a.role === "custom" ? "CUSTOM" : "AI EMPLOYEE"}</span></div><h3>${esc(a.name)}</h3>${(() => {
+          const p = employeePresence(
+            a,
+            state.tasks,
+            state.ai,
+            state.connection,
+          );
+          return `<span class="presence-badge" style="--presence:${p.color}"><i></i>${esc(p.label)}</span>`;
+        })()}<p>${esc(a.description)}</p><div class="flex"><button class="btn" data-agenttask="${a.id}">Ажил даалгах ↗</button><button class="btn" data-editagent="${a.id}" aria-label="AI ажилтан засах">⚙</button></div></article>`,
+    )
+    .join(
+      "",
+    )}</div><div class="pagehead" style="margin-top:35px"><h2>AI ажилтны универсал сан</h2></div><div class="grid">${state.templates.map((a, i) => `<article class="card"><div class="agent-avatar" style="background:${colors[a.color]}55">✧</div><h3>${esc(a.name)}</h3><p>${esc(a.description)}</p><button class="btn" data-template="${i}">＋ Багт нэмэх</button></article>`).join("")}</div>`;
 }
 function tasksView() {
   return taskScreen({ state, filter, mode: taskMode });
@@ -1121,6 +1143,11 @@ const pollTimer = setInterval(async () => {
       modal.scrollTop = scroll;
     }
   } catch {
+    if (state && me) {
+      state.connection = { stale: true };
+      if (!modal.open && !$("input:focus,textarea:focus,select:focus"))
+        renderApp();
+    }
   } finally {
     busy = false;
   }
@@ -1172,8 +1199,16 @@ function openDemo() {
     description,
     color,
     instructions: "Демо ажилтан",
+    role: /Manager/.test(name)
+      ? "manager"
+      : /Reviewer/.test(name)
+        ? "review"
+        : /Researcher/.test(name)
+          ? "research"
+          : "document",
   }));
   state = {
+    demo: true,
     agents,
     rooms: [
       { id: "demo-general", name: "Үндсэн оффис", type: "general" },

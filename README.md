@@ -102,3 +102,10 @@ Automated coverage includes tenant/private-room access, roles, sessions, single-
 Actual desktop/mobile GPU appearance, frame rate and a paid end-to-end AI job remain unverified. The visual direction is an editorial product workspace, not a claim of an Awwwards award or certification.
 
 Not yet implemented: email verification/recovery and SSO, billing/subscriptions, external OAuth integrations (email/calendar/CRM), webhook execution, recurring cron workflows, vector search, PPTX output, OCR, dollar-budget reconciliation, PostgreSQL/multiple replicas, off-host backup and a comprehensive independent security/load audit. No inert controls pretend these integrations are connected. Keep critical HR, financial and legal actions under human review; approval only changes internal status and never sends or pays anything externally.
+
+### Workforce visual update
+
+- Deterministic employee portraits and matching 3D skin, hairstyle and role accessories; identity remains stable when an employee is renamed.
+- Nine architecture themes now include distinct structural features, props, desk finishes and room layouts.
+- Shared activity model: active pipeline specialist, queued teammate, human review, configured readiness, missing AI connection and stale server connection. Polls every six seconds while visible; this is AI task activity, not human online presence or a provider health check.
+- WebGL-unavailable browsers get selectable illustrated employee cards instead of an empty canvas.

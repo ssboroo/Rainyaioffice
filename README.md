@@ -59,6 +59,14 @@ Official contract: https://developers.openai.com/api/docs/guides/agents-api/quic
 | `PORT` | HTTP port, default 3000; `--port` is also supported |
 | `DAILY_AI_CALL_LIMIT` | Workspace daily attempt cap, default 30; UTC day |
 
+## Production build
+
+`npm run build` bundles the browser application, Three.js and OrbitControls into a minified local module in `dist/public/app.js`. No browser CDN is needed. The distribution contains the server, public assets, lockfile and SHA-256 build manifest. Source inputs are whitelisted: database files and secrets are never copied.
+
+Run `npm ci --omit=dev --ignore-scripts --prefix dist` then `cd dist && npm start` with production environment variables configured. `npm run test:build` smoke-tests the built server, health endpoint, assets, database initialization and Secure sessions using an isolated temporary database. It does not execute a paid AI request or validate GPU rendering.
+
+The multi-stage Dockerfile builds the same distribution and installs only runtime dependencies in the final image. An actual container image requires a Docker-enabled builder; a successful JavaScript distribution build is separate from a successful Docker image build or Railway deployment.
+
 ## Container deployment
 
 ```sh
@@ -75,6 +83,8 @@ Use a SQLite-aware backup process (SQLite backup API or `VACUUM INTO`) and perio
 ```sh
 npm run check
 npm test
+npm run build
+npm run test:build
 ```
 
 24 automated tests cover tenant isolation, session revocation, CSRF, malformed input, role enforcement, single-use invitations, document isolation, approval state transitions, missing keys, and a successful multi-specialist/failing agent workflow through the real SDK against a local mock HTTP transport. No live paid API test has been run. Scene geometry, ray intersections, disposal, and locally served Three.js modules are tested. Actual GPU rendering and desktop/mobile visual QA remain unverified because the available browser environment blocked access.

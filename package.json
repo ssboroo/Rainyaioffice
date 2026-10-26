@@ -10,10 +10,15 @@
     "start": "node --env-file-if-exists=.env.local server.mjs",
     "test": "node --test",
     "check": "node --check server.mjs && node --check public/app.js && node --check public/office3d.js",
-    "dev": "node --env-file-if-exists=.env.local server.mjs"
+    "dev": "node --env-file-if-exists=.env.local server.mjs",
+    "build": "node scripts/build.mjs",
+    "test:build": "node scripts/smoke-build.mjs"
   },
   "dependencies": {
     "openai": "7.42.0",
     "three": "0.180.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
   }
 }

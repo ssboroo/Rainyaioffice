@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {totp,verifyTotp,newSecret} from '../lib/mfa.mjs';
+import {createBackup} from '../lib/backups.mjs';
+import {DatabaseSync} from 'node:sqlite';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+test('TOTP matches RFC vector, rejects replays and expired codes',()=>{const secret='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';assert.equal(totp(secret,59000),'287082');assert.equal(verifyTotp(secret,'287082',-1,59000),1);assert.equal(verifyTotp(secret,'287082',1,59000),null);assert.equal(verifyTotp(secret,'287082',-1,200000),null);assert.match(newSecret(),/^[A-Z2-7]{32}$/);});
+test('SQLite backup can be reopened and contains the committed data',async()=>{const dir=await mkdtemp(join(tmpdir(),'rainy-backup-'));const path=join(dir,'office.sqlite');const db=new DatabaseSync(path);db.exec("CREATE TABLE example(value TEXT); INSERT INTO example VALUES('Монгол өгөгдөл')");const output=await createBackup(db,path);db.close();const copy=new DatabaseSync(output,{readOnly:true});assert.equal(copy.prepare('SELECT value FROM example').get().value,'Монгол өгөгдөл');copy.close();await rm(dir,{recursive:true,force:true});});
